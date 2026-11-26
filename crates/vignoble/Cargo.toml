@@ -1,0 +1,18 @@
+[package]
+name = "vignoble"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Umbrella CLI for the vignoble git workflow suite"
+
+[[bin]]
+name = "vignoble"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+cli-core = { path = "../cli-core" }
+console.workspace = true

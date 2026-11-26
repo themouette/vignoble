@@ -1,40 +1,40 @@
-# branches-status (`git bs`)
+# sarment
 
 Check the sync status, worktree checkout state, and stage progression (`dev`, `staging`, `preprod`, `prod`) of your Git branches.
 
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/themouette/git-workflow/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/themouette/vignoble/main/install.sh | bash
 ```
 
-This installs `branches-status` to `~/.local/bin` and links `git-bs`, so you can run either `branches-status` or `git bs`.
+This installs `vignoble` and `sarment` to `~/.local/bin`.
 
 To update to the latest release:
 
 ```bash
-branches-status update
+vignoble update
 ```
 
 ## Usage
 
 ```bash
 # Fetch and show all local branches grouped by stage
-branches-status
+sarment
 
 # Skip git fetch
-branches-status -u
+sarment -u
 
 # Include squash-merged PR detection
-branches-status --squash
+sarment --squash
 
 # List branch names in a stage (for scripting)
-branches-status list prod
-branches-status list dev
+sarment list prod
+sarment list dev
 
 # Delete local branches merged in a stage (skips current & worktree-checked-out branches)
-branches-status clean prod
-branches-status clean prod -y
+sarment clean prod
+sarment clean prod -y
 ```
 
 ### Status Symbols
@@ -49,16 +49,18 @@ branches-status clean prod -y
 
 ## Configuration
 
-`branches-status` loads and merges TOML configuration files from lowest to highest precedence:
+`sarment` loads and merges TOML configuration files from lowest to highest precedence:
 
-1. `~/.config/branches-status/config.toml` or `~/.config/branches-status`
-2. `~/.branches-status`
-3. Any parent `.branches-status` directory walking down to the current directory
-4. `<repo-root>/.branches-status` and `./.branches-status`
+1. `~/.config/sarment/config.toml` or `~/.config/sarment`
+2. `~/.sarment`
+3. Any parent `.sarment` file walking down to the current directory
+4. `<repo-root>/.sarment` and `./.sarment`
+
+Legacy `~/.config/branches-status` and `.branches-status` configuration files remain supported as lower-precedence fallbacks.
 
 ### Defaults
 
-Without a config file, `branches-status` evaluates stages in this waterfall order and hides any stage whose branch does not exist in the repository:
+Without a config file, `sarment` evaluates stages in this waterfall order and hides any stage whose branch does not exist in the repository:
 
 ```toml
 remote = "origin"

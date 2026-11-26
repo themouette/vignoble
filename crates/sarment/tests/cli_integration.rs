@@ -70,9 +70,9 @@ impl TestGitEnv {
     }
 
     fn cmd(&self) -> Command {
-        let mut cmd = Command::cargo_bin("branches-status").unwrap();
+        let mut cmd = Command::cargo_bin("sarment").unwrap();
         cmd.current_dir(&self.local_dir);
-        // Isolate HOME so user's global ~/.config/branches-status doesn't affect tests
+        // Isolate HOME so user's global config doesn't affect tests
         cmd.env("HOME", self._tmp.path());
         cmd
     }
@@ -263,7 +263,7 @@ fn test_custom_stages_with_branch_script_and_check_script() {
 
     run_git(&env.local_dir, &["checkout", "preprod"]);
 
-    // Write local `.branches-status` config
+    // Write local `.sarment` config
     let cfg = r#"
 stages = ["main", "preprod", "staging", "partial-staging"]
 
@@ -281,7 +281,7 @@ fi
 exit 1
 '''
 "#;
-    fs::write(env.local_dir.join(".branches-status"), cfg).unwrap();
+    fs::write(env.local_dir.join(".sarment"), cfg).unwrap();
 
     // Verify `list staging` finds `feat/in-staging` via dynamic `branch_script`
     env.cmd()
@@ -304,6 +304,55 @@ exit 1
         .success()
         .stdout(predicate::str::contains("(staging-42)"))
         .stdout(predicate::str::contains("1/2 services"));
+}
+
+#[test]
+fn test_legacy_branches_status_config_fallback_and_sarment_precedence() {
+    let env = TestGitEnv::setup();
+
+    run_git(&env.local_dir, &["checkout", "-b", "feat/legacy-check"]);
+    commit_file(&env.local_dir, "legacy.txt", "legacy\n", "Legacy feature");
+    run_git(&env.local_dir, &["checkout", "main"]);
+
+    let legacy_cfg = r#"
+stages = ["main", "partial-staging"]
+
+[stage.partial-staging]
+check_script = '''
+if [ "$1" = "feat/legacy-check" ]; then
+  echo "from-legacy"
+  exit 0
+fi
+exit 1
+'''
+"#;
+    fs::write(env.local_dir.join(".branches-status"), legacy_cfg).unwrap();
+
+    // `.branches-status` fallback works on its own
+    env.cmd()
+        .args(["-u", "list", "partial-staging"])
+        .assert()
+        .success()
+        .stdout("feat/legacy-check\n");
+
+    // `.sarment` takes precedence over `.branches-status`
+    let sarment_cfg = r#"
+[stage.partial-staging]
+check_script = '''
+if [ "$1" = "feat/legacy-check" ]; then
+  echo "from-sarment"
+  exit 0
+fi
+exit 1
+'''
+"#;
+    fs::write(env.local_dir.join(".sarment"), sarment_cfg).unwrap();
+
+    env.cmd()
+        .arg("-u")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("from-sarment"));
 }
 
 #[test]

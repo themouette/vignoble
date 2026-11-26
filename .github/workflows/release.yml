@@ -15,7 +15,8 @@ jobs:
     strategy:
       matrix:
         bin:
-          - branches-status
+          - vignoble
+          - sarment
         include:
           - os: macos-latest
             target: x86_64-apple-darwin
@@ -87,9 +88,9 @@ jobs:
           body: |
             ## Installation
 
-            Install to `~/.local/bin` (also links `git-bs` so `git bs` works out of the box):
+            Install `vignoble` and `sarment` to `~/.local/bin`:
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/themouette/git-workflow/main/install.sh | bash
+            curl -fsSL https://raw.githubusercontent.com/themouette/vignoble/main/install.sh | bash
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

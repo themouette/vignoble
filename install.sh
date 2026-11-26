@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
-# Installation script for git-workflow tools (branches-status / git-bs, and future tools like git-wt)
-# Usage: curl -fsSL https://raw.githubusercontent.com/themouette/git-workflow/main/install.sh | bash
+# Installation script for the vignoble suite (vignoble, sarment, and future cep)
+# Usage: curl -fsSL https://raw.githubusercontent.com/themouette/vignoble/main/install.sh | bash
 
-REPO="themouette/git-workflow"
-DEFAULT_TOOLS=("branches-status")
+REPO="themouette/vignoble"
+DEFAULT_TOOLS=("vignoble" "sarment")
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -31,7 +31,7 @@ log_warning() {
 
 show_help() {
   cat << EOF
-git-workflow installer
+vignoble installer
 
 USAGE:
     curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash
@@ -51,7 +51,8 @@ OPTIONS:
 
 TOOLS:
     Default installed tools: ${DEFAULT_TOOLS[*]}
-    Note: installing 'branches-status' also creates the 'git-bs' symlink so 'git bs' works out of the box.
+    For shell integration (e.g. cep worktree navigation), add to your shell config:
+      eval "\$(vignoble shell-init)"
 
 EOF
   exit 0
@@ -129,15 +130,6 @@ install_tool() {
     sudo chmod +x "$install_dir/$tool"
   fi
 
-  if [ "$tool" = "branches-status" ]; then
-    log_info "Creating symlink ${install_dir}/git-bs -> branches-status"
-    if [ -w "$install_dir" ]; then
-      ln -sf "${install_dir}/branches-status" "${install_dir}/git-bs"
-    else
-      sudo ln -sf "${install_dir}/branches-status" "${install_dir}/git-bs"
-    fi
-  fi
-
   log_success "${tool} installed!"
 }
 
@@ -208,6 +200,9 @@ main() {
   for tool in "${tools[@]}"; do
     install_tool "$tool" "$version" "$platform" "$install_dir" "$tmp_dir"
   done
+
+  log_info "For shell integration, add to your shell configuration file (~/.zshrc, ~/.bashrc):"
+  echo "  eval \"\$(vignoble shell-init)\""
 
   if ! check_path "$install_dir"; then
     log_warning "Installation directory ${install_dir} is not in your PATH"

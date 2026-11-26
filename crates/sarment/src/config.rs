@@ -5,9 +5,18 @@ use cli_core::{
 use git_core::{StageDefinition, StageMode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-pub const APP_NAME: &str = "branches-status";
+pub const APP_NAME: &str = "sarment";
+pub const LEGACY_APP_NAME: &str = "branches-status";
+
+/// Discover configuration files in precedence order (legacy `branches-status` files first,
+/// followed by `sarment` files).
+pub fn discover_config_paths(cwd: &Path, main_repo_root: Option<&Path>) -> Vec<PathBuf> {
+    let mut paths = discover_cascading_paths(LEGACY_APP_NAME, cwd, main_repo_root);
+    paths.extend(discover_cascading_paths(APP_NAME, cwd, main_repo_root));
+    paths
+}
 
 pub fn default_stages_list() -> Vec<String> {
     vec![
@@ -53,7 +62,7 @@ impl StageConfig {
     }
 }
 
-/// Partial config deserialized from a single `.branches-status` file.
+/// Partial config deserialized from a single `.sarment` or `.branches-status` file.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct PartialConfig {
@@ -107,7 +116,7 @@ impl EffectiveConfig {
 
     pub fn load(cwd: &Path, main_repo_root: Option<&Path>) -> CliResult<Self> {
         let mut config = EffectiveConfig::default();
-        let paths = discover_cascading_paths(APP_NAME, cwd, main_repo_root);
+        let paths = discover_config_paths(cwd, main_repo_root);
         for path in paths {
             let partial: PartialConfig = load_toml_file(&path)?;
             config = config.apply_partial(partial);
@@ -164,6 +173,8 @@ pub fn default_stage_presentation(stage_name: &str) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_default_config_has_expected_stages() {
@@ -220,5 +231,22 @@ check_script = "exit 1"
         assert_eq!(defs[0].mode, StageMode::Branch("prod".to_string()));
         assert_eq!(defs[1].mode, StageMode::CheckScript("exit 0".to_string()));
         assert_eq!(defs[2].mode, StageMode::CheckScript("exit 1".to_string()));
+    }
+
+    #[test]
+    fn test_discover_config_paths_orders_legacy_before_sarment() {
+        let tmp = tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+
+        let legacy_cfg = repo.join(".branches-status");
+        let sarment_cfg = repo.join(".sarment");
+        fs::write(&legacy_cfg, "remote = 'upstream'\nsquash = true\n").unwrap();
+        fs::write(&sarment_cfg, "remote = 'origin'\n").unwrap();
+
+        let paths = discover_config_paths(&repo, None);
+        let legacy_idx = paths.iter().position(|p| p == &legacy_cfg).unwrap();
+        let sarment_idx = paths.iter().position(|p| p == &sarment_cfg).unwrap();
+        assert!(legacy_idx < sarment_idx);
     }
 }

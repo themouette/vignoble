@@ -2,7 +2,7 @@ use crate::error::{CliError, Result};
 use semver::Version;
 
 pub const REPO_OWNER: &str = "themouette";
-pub const REPO_NAME: &str = "git-workflow";
+pub const REPO_NAME: &str = "vignoble";
 
 /// Return the target platform identifier used in GitHub release asset names.
 pub fn current_platform() -> Result<String> {

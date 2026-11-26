@@ -3,7 +3,8 @@ resolver = "2"
 members = [
     "crates/cli-core",
     "crates/git-core",
-    "crates/branches-status",
+    "crates/sarment",
+    "crates/vignoble",
 ]
 
 [workspace.package]
@@ -11,7 +12,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Julien Muetton <themouette@gmail.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/themouette/git-workflow"
+repository = "https://github.com/themouette/vignoble"
 
 [workspace.dependencies]
 anyhow = "1.0"

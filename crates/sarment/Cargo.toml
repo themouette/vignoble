@@ -1,5 +1,5 @@
 [package]
-name = "branches-status"
+name = "sarment"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -8,7 +8,7 @@ repository.workspace = true
 description = "Check the status and stage progression of your git branches"
 
 [[bin]]
-name = "branches-status"
+name = "sarment"
 path = "src/main.rs"
 
 [dependencies]

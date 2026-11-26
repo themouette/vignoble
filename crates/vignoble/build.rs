@@ -17,7 +17,7 @@ fn main() {
         version
     };
 
-    println!("cargo:rustc-env=BRANCHES_STATUS_VERSION={}", full_version);
+    println!("cargo:rustc-env=VIGNOBLE_VERSION={}", full_version);
 }
 
 fn get_git_hash() -> Option<String> {

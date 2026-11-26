@@ -1,42 +1,30 @@
 use anyhow::Result;
-use branches_status::{
-    commands::{
-        all, clean, list,
-        update::{self, VERSION},
-        ExecutionContext,
-    },
-    config::EffectiveConfig,
-};
 use clap::{Parser, Subcommand};
-use cli_core::{
-    config::discover_cascading_paths,
-    ui::{
-        color_str, DIVERGED_SYMBOL, NEED_PULL_SYMBOL, NEED_PUSH_SYMBOL, UNKNOWN_UPSTREAM_SYMBOL,
-        UPSTREAM_ONLY_SYMBOL, UP_TO_DATE_SYMBOL,
-    },
-    update::UpdateArgs,
+use cli_core::ui::{
+    color_str, DIVERGED_SYMBOL, NEED_PULL_SYMBOL, NEED_PUSH_SYMBOL, UNKNOWN_UPSTREAM_SYMBOL,
+    UPSTREAM_ONLY_SYMBOL, UP_TO_DATE_SYMBOL,
 };
 use git_core::GitRunner;
+use sarment::{
+    commands::{all, clean, list, ExecutionContext},
+    config::{discover_config_paths, EffectiveConfig},
+};
 use std::env;
 
 fn config_help_section() -> String {
     let cwd = env::current_dir().unwrap_or_default();
     let main_repo_root = GitRunner::new(&cwd, false).main_repo_root().ok();
-    let active_paths = discover_cascading_paths(
-        branches_status::config::APP_NAME,
-        &cwd,
-        main_repo_root.as_deref(),
-    );
+    let active_paths = discover_config_paths(&cwd, main_repo_root.as_deref());
 
     if active_paths.is_empty() {
         format!(
             "Configuration:\n\
              \x20 No configuration file found (using built-in defaults).\n\
-             \x20 You can configure branches-status in:\n\
+             \x20 You can configure sarment in:\n\
              \x20   - {} (global)\n\
              \x20   - {} (local directory or any parent directory)",
-            color_str("~/.config/branches-status/config.toml", "cyan"),
-            color_str("./.branches-status", "cyan"),
+            color_str("~/.config/sarment/config.toml", "cyan"),
+            color_str("./.sarment", "cyan"),
         )
     } else {
         let list = active_paths
@@ -60,7 +48,7 @@ fn colored_after_help() -> String {
                 .and_then(|s| s.to_str())
                 .map(String::from)
         })
-        .unwrap_or_else(|| "branches-status".to_string());
+        .unwrap_or_else(|| "sarment".to_string());
 
     format!(
         "Meaning of the symbols:\n\
@@ -93,8 +81,8 @@ fn colored_after_help() -> String {
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "branches-status",
-    version = VERSION,
+    name = "sarment",
+    version = env!("SARMENT_VERSION"),
     about = "Check the status of your branches across workflow stages",
     after_help = colored_after_help()
 )]
@@ -131,12 +119,7 @@ struct Cli {
     force: bool,
 
     /// Turn on debug output
-    #[arg(
-        short = 'd',
-        long = "debug",
-        env = "BRANCHES_STATUS_DEBUG",
-        global = true
-    )]
+    #[arg(short = 'd', long = "debug", env = "SARMENT_DEBUG", global = true)]
     debug: bool,
 }
 
@@ -158,9 +141,6 @@ enum Commands {
         #[arg(default_value = "prod")]
         stage: String,
     },
-
-    /// Update branches-status binary from GitHub releases
-    Update(UpdateArgs),
 }
 
 fn main() {
@@ -178,10 +158,6 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    if let Some(Commands::Update(ref args)) = cli.command {
-        return update::execute(args);
-    }
-
     let cwd = env::current_dir()?;
     let git = GitRunner::new(&cwd, cli.debug);
     let main_repo_root = git.main_repo_root()?;
@@ -215,6 +191,5 @@ fn run(cli: Cli) -> Result<()> {
         Commands::All => all::execute(&ctx),
         Commands::List { stage } => list::execute(&ctx, &stage),
         Commands::Clean { stage } => clean::execute(&ctx, &stage),
-        Commands::Update(_) => unreachable!(),
     }
 }

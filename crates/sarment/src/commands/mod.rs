@@ -1,7 +1,6 @@
 pub mod all;
 pub mod clean;
 pub mod list;
-pub mod update;
 
 use crate::config::EffectiveConfig;
 use anyhow::{anyhow, Result};
