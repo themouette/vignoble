@@ -81,14 +81,14 @@ fn perform_update(
         .repo_owner(REPO_OWNER)
         .repo_name(REPO_NAME)
         .bin_name(bin_name)
-        .identifier(bin_name)
-        .target(&version::current_platform()?)
+        .asset_identifier(bin_name)
+        .target(version::current_platform()?)
         .current_version(clean_current)
         .show_download_progress(true)
         .no_confirm(skip_confirm);
 
     if let Some(v) = target_version {
-        update_builder.target_version_tag(&format!("v{}", v));
+        update_builder.release_tag(format!("v{}", v));
     }
 
     let updater = update_builder
@@ -123,8 +123,9 @@ pub fn get_latest_version() -> Result<Option<String>> {
 
     match releases.fetch() {
         Ok(list) => Ok(list
+            .into_vec()
             .first()
-            .map(|r| r.version.trim_start_matches('v').to_string())),
+            .map(|r| r.version().trim_start_matches('v').to_string())),
         Err(_) => Ok(None),
     }
 }
