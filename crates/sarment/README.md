@@ -8,7 +8,7 @@ Check the sync status, worktree checkout state, and stage progression (`dev`, `s
 curl -fsSL https://raw.githubusercontent.com/themouette/vignoble/main/install.sh | bash
 ```
 
-This installs `vignoble` and `sarment` to `~/.local/bin`.
+This installs `vignoble`, `sarment`, and `cep` to `~/.local/bin`.
 
 To update to the latest release:
 
@@ -49,20 +49,20 @@ sarment clean prod -y
 
 ## Configuration
 
-`sarment` loads and merges TOML configuration files from lowest to highest precedence:
+`sarment` shares the unified `vignoble` TOML configuration files, loaded and merged from lowest to highest precedence:
 
-1. `~/.config/sarment/config.toml` or `~/.config/sarment`
-2. `~/.sarment`
-3. Any parent `.sarment` file walking down to the current directory
-4. `<repo-root>/.sarment` and `./.sarment`
-
-Legacy `~/.config/branches-status` and `.branches-status` configuration files remain supported as lower-precedence fallbacks.
+1. `~/.config/vignoble/config.toml`, `~/.config/vignoble.toml`, or `~/.config/vignoble`
+2. `~/.vignoble` or `~/.vignoble.toml`
+3. Any parent `.vignoble` or `.vignoble.toml` file walking down to the current directory
+4. `<repo-root>/.vignoble` or `<repo-root>/.vignoble.toml`
+5. `./.vignoble` or `./.vignoble.toml`
 
 ### Defaults
 
 Without a config file, `sarment` evaluates stages in this waterfall order and hides any stage whose branch does not exist in the repository:
 
 ```toml
+[sarment]
 remote = "origin"
 squash = false
 stages = ["main", "master", "prod", "preprod", "staging"]
@@ -72,26 +72,27 @@ Any branch that does not match a stage is placed in `dev` (`Unmerged`).
 
 ### Customizing Stages
 
-Define `stages = [...]` to replace the waterfall order, or define `[stage.<name>]` to customize how a specific stage is resolved:
+Define `stages = [...]` under `[sarment]` (or at the top level) to replace the waterfall order, or define `[sarment.stage.<name>]` (or `[stage.<name>]`) to customize how a specific stage is resolved:
 
 ```toml
+[sarment]
 # Optional: override the full stage waterfall order
 stages = ["prod", "preprod", "staging", "partial-staging"]
 
 # 1. Static branch name
-[stage.prod]
+[sarment.stage.prod]
 branch = "prod"
 label = "In production"
 color = "green"
 
 # 2. Dynamic target branch (runs once, stdout = branch name)
-[stage.staging]
+[sarment.stage.staging]
 branch_script = '''
 git show origin/preprod:.gitlab-ci.yml | awk -F': ' '/CURRENT_STAGING/ {print $2; exit}'
 '''
 
 # 3. Per-branch check script (runs per candidate branch $1; exit 0 = match, first stdout line = annotation)
-[stage.partial-staging]
+[sarment.stage.partial-staging]
 check_script = '''
 branch="${1}"
 # return 0 if $branch is partially integrated

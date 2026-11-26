@@ -17,6 +17,7 @@ jobs:
         bin:
           - vignoble
           - sarment
+          - cep
         include:
           - os: macos-latest
             target: x86_64-apple-darwin
@@ -88,7 +89,7 @@ jobs:
           body: |
             ## Installation
 
-            Install `vignoble` and `sarment` to `~/.local/bin`:
+            Install `vignoble`, `sarment`, and `cep` to `~/.local/bin`:
             ```bash
             curl -fsSL https://raw.githubusercontent.com/themouette/vignoble/main/install.sh | bash
             ```

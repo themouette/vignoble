@@ -263,16 +263,16 @@ fn test_custom_stages_with_branch_script_and_check_script() {
 
     run_git(&env.local_dir, &["checkout", "preprod"]);
 
-    // Write local `.sarment` config
     let cfg = r#"
+[sarment]
 stages = ["main", "preprod", "staging", "partial-staging"]
 
-[stage.staging]
+[sarment.stage.staging]
 branch_script = '''
 git show origin/preprod:.gitlab-ci.yml | awk -F': ' '/CURRENT_STAGING/ {print $2}'
 '''
 
-[stage.partial-staging]
+[sarment.stage.partial-staging]
 check_script = '''
 if [ "$1" = "feat/partial-only" ]; then
   echo "1/2 services"
@@ -281,7 +281,7 @@ fi
 exit 1
 '''
 "#;
-    fs::write(env.local_dir.join(".sarment"), cfg).unwrap();
+    fs::write(env.local_dir.join(".vignoble.toml"), cfg).unwrap();
 
     // Verify `list staging` finds `feat/in-staging` via dynamic `branch_script`
     env.cmd()
@@ -307,52 +307,50 @@ exit 1
 }
 
 #[test]
-fn test_legacy_branches_status_config_fallback_and_sarment_precedence() {
+fn test_unified_vignoble_config_precedence() {
     let env = TestGitEnv::setup();
 
-    run_git(&env.local_dir, &["checkout", "-b", "feat/legacy-check"]);
-    commit_file(&env.local_dir, "legacy.txt", "legacy\n", "Legacy feature");
+    run_git(&env.local_dir, &["checkout", "-b", "feat/cfg-check"]);
+    commit_file(&env.local_dir, "cfg.txt", "cfg\n", "Config feature");
     run_git(&env.local_dir, &["checkout", "main"]);
 
-    let legacy_cfg = r#"
+    let extless_cfg = r#"
 stages = ["main", "partial-staging"]
 
 [stage.partial-staging]
 check_script = '''
-if [ "$1" = "feat/legacy-check" ]; then
-  echo "from-legacy"
+if [ "$1" = "feat/cfg-check" ]; then
+  echo "from-dot-vignoble"
   exit 0
 fi
 exit 1
 '''
 "#;
-    fs::write(env.local_dir.join(".branches-status"), legacy_cfg).unwrap();
+    fs::write(env.local_dir.join(".vignoble"), extless_cfg).unwrap();
 
-    // `.branches-status` fallback works on its own
     env.cmd()
         .args(["-u", "list", "partial-staging"])
         .assert()
         .success()
-        .stdout("feat/legacy-check\n");
+        .stdout("feat/cfg-check\n");
 
-    // `.sarment` takes precedence over `.branches-status`
-    let sarment_cfg = r#"
-[stage.partial-staging]
+    let toml_cfg = r#"
+[sarment.stage.partial-staging]
 check_script = '''
-if [ "$1" = "feat/legacy-check" ]; then
-  echo "from-sarment"
+if [ "$1" = "feat/cfg-check" ]; then
+  echo "from-vignoble-toml"
   exit 0
 fi
 exit 1
 '''
 "#;
-    fs::write(env.local_dir.join(".sarment"), sarment_cfg).unwrap();
+    fs::write(env.local_dir.join(".vignoble.toml"), toml_cfg).unwrap();
 
     env.cmd()
         .arg("-u")
         .assert()
         .success()
-        .stdout(predicate::str::contains("from-sarment"));
+        .stdout(predicate::str::contains("from-vignoble-toml"));
 }
 
 #[test]

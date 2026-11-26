@@ -192,6 +192,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "cep"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_cmd",
+ "clap",
+ "cli-core",
+ "console 0.15.11",
+ "dirs",
+ "git-core",
+ "predicates",
+ "serde",
+ "tempfile",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

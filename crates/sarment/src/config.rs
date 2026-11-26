@@ -7,15 +7,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-pub const APP_NAME: &str = "sarment";
-pub const LEGACY_APP_NAME: &str = "branches-status";
+pub const APP_NAME: &str = "vignoble";
 
-/// Discover configuration files in precedence order (legacy `branches-status` files first,
-/// followed by `sarment` files).
+/// Discover unified `vignoble` configuration files in precedence order.
 pub fn discover_config_paths(cwd: &Path, main_repo_root: Option<&Path>) -> Vec<PathBuf> {
-    let mut paths = discover_cascading_paths(LEGACY_APP_NAME, cwd, main_repo_root);
-    paths.extend(discover_cascading_paths(APP_NAME, cwd, main_repo_root));
-    paths
+    discover_cascading_paths(APP_NAME, cwd, main_repo_root)
 }
 
 pub fn default_stages_list() -> Vec<String> {
@@ -62,7 +58,19 @@ impl StageConfig {
     }
 }
 
-/// Partial config deserialized from a single `.sarment` or `.branches-status` file.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct PartialSarmentSection {
+    pub remote: Option<String>,
+    pub squash: Option<bool>,
+    pub stages: Option<Vec<String>>,
+    /// Support both `[sarment.stage.<name>]` and `[sarment.stages.<name>]` table headers.
+    #[serde(alias = "stages_config")]
+    pub stage: HashMap<String, StageConfig>,
+}
+
+/// Partial config deserialized from a unified `vignoble` config file.
+/// Supports both `[sarment]`-namespaced keys and top-level keys.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct PartialConfig {
@@ -72,6 +80,7 @@ pub struct PartialConfig {
     /// Support both `[stage.<name>]` and `[stages.<name>]` table headers.
     #[serde(alias = "stages_config")]
     pub stage: HashMap<String, StageConfig>,
+    pub sarment: Option<PartialSarmentSection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,17 +103,17 @@ impl Default for EffectiveConfig {
 }
 
 impl EffectiveConfig {
-    pub fn apply_partial(mut self, partial: PartialConfig) -> Self {
-        if let Some(remote) = partial.remote {
+    fn apply_section(mut self, section: PartialSarmentSection) -> Self {
+        if let Some(remote) = section.remote {
             self.remote = remote;
         }
-        if let Some(squash) = partial.squash {
+        if let Some(squash) = section.squash {
             self.squash = squash;
         }
-        if let Some(stages) = partial.stages {
+        if let Some(stages) = section.stages {
             self.stages = stages;
         }
-        for (name, cfg) in partial.stage {
+        for (name, cfg) in section.stage {
             let merged = match self.stage_configs.remove(&name) {
                 Some(existing) => existing.merge(cfg),
                 None => cfg,
@@ -112,6 +121,20 @@ impl EffectiveConfig {
             self.stage_configs.insert(name, merged);
         }
         self
+    }
+
+    pub fn apply_partial(self, partial: PartialConfig) -> Self {
+        let top_level = PartialSarmentSection {
+            remote: partial.remote,
+            squash: partial.squash,
+            stages: partial.stages,
+            stage: partial.stage,
+        };
+        let mut updated = self.apply_section(top_level);
+        if let Some(sarment_section) = partial.sarment {
+            updated = updated.apply_section(sarment_section);
+        }
+        updated
     }
 
     pub fn load(cwd: &Path, main_repo_root: Option<&Path>) -> CliResult<Self> {
@@ -234,19 +257,48 @@ check_script = "exit 1"
     }
 
     #[test]
-    fn test_discover_config_paths_orders_legacy_before_sarment() {
+    fn test_partial_config_supports_sarment_section_and_coexists_with_cep() {
+        let base = EffectiveConfig::default();
+        let toml_str = r#"
+[cep]
+location = "~/worktrees"
+template = "{repo}-worktrees/{name}"
+
+[sarment]
+remote = "upstream"
+squash = true
+stages = ["prod", "staging"]
+
+[sarment.stage.staging]
+branch_script = "echo staging-42"
+"#;
+        let partial: PartialConfig = toml::from_str(toml_str).unwrap();
+        let merged = base.apply_partial(partial);
+
+        assert_eq!(merged.remote, "upstream");
+        assert!(merged.squash);
+        assert_eq!(merged.stages, vec!["prod", "staging"]);
+        let defs = merged.to_stage_definitions();
+        assert_eq!(
+            defs[1].mode,
+            StageMode::BranchScript("echo staging-42".to_string())
+        );
+    }
+
+    #[test]
+    fn test_discover_config_paths_orders_vignoble_before_vignoble_toml() {
         let tmp = tempdir().unwrap();
         let repo = tmp.path().join("repo");
         fs::create_dir_all(&repo).unwrap();
 
-        let legacy_cfg = repo.join(".branches-status");
-        let sarment_cfg = repo.join(".sarment");
-        fs::write(&legacy_cfg, "remote = 'upstream'\nsquash = true\n").unwrap();
-        fs::write(&sarment_cfg, "remote = 'origin'\n").unwrap();
+        let extless_cfg = repo.join(".vignoble");
+        let toml_cfg = repo.join(".vignoble.toml");
+        fs::write(&extless_cfg, "remote = 'upstream'\nsquash = true\n").unwrap();
+        fs::write(&toml_cfg, "[sarment]\nremote = 'origin'\n").unwrap();
 
         let paths = discover_config_paths(&repo, None);
-        let legacy_idx = paths.iter().position(|p| p == &legacy_cfg).unwrap();
-        let sarment_idx = paths.iter().position(|p| p == &sarment_cfg).unwrap();
-        assert!(legacy_idx < sarment_idx);
+        let extless_idx = paths.iter().position(|p| p == &extless_cfg).unwrap();
+        let toml_idx = paths.iter().position(|p| p == &toml_cfg).unwrap();
+        assert!(extless_idx < toml_idx);
     }
 }

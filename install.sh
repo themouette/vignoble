@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
-# Installation script for the vignoble suite (vignoble, sarment, and future cep)
+# Installation script for the vignoble suite (vignoble, sarment, cep)
 # Usage: curl -fsSL https://raw.githubusercontent.com/themouette/vignoble/main/install.sh | bash
 
 REPO="themouette/vignoble"
-DEFAULT_TOOLS=("vignoble" "sarment")
+DEFAULT_TOOLS=("vignoble" "sarment" "cep")
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'

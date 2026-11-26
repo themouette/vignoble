@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// State of HEAD in a worktree.
-/// Includes `Detached` and `Bare` so `git-wt` can inspect worktrees without a checked-out branch.
+/// Includes `Detached` and `Bare` so `cep` can inspect worktrees without a checked-out branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorktreeHead {
     Branch(String),
@@ -148,6 +148,166 @@ pub fn parse_porcelain_worktrees(
     worktrees
 }
 
+pub fn add_worktree_detached(git: &GitRunner, path: &Path, base_ref: Option<&str>) -> Result<()> {
+    let path_str = path.to_string_lossy();
+    let mut args = vec!["worktree", "add", "--detach", path_str.as_ref()];
+    if let Some(base) = base_ref {
+        args.push(base);
+    }
+    git.git(&args)?;
+    Ok(())
+}
+
+pub fn add_worktree_branch(
+    git: &GitRunner,
+    path: &Path,
+    branch: &str,
+    create_branch: bool,
+    base_ref: Option<&str>,
+) -> Result<()> {
+    let path_str = path.to_string_lossy();
+    let mut args = vec!["worktree", "add"];
+    if create_branch {
+        args.push("-b");
+        args.push(branch);
+        args.push(path_str.as_ref());
+        if let Some(base) = base_ref {
+            args.push(base);
+        }
+    } else {
+        args.push(path_str.as_ref());
+        args.push(branch);
+    }
+    git.git(&args)?;
+    Ok(())
+}
+
+pub fn lock_worktree(git: &GitRunner, path: &Path, reason: Option<&str>) -> Result<()> {
+    let path_str = path.to_string_lossy();
+    let mut args = vec!["worktree", "lock"];
+    if let Some(r) = reason.filter(|r| !r.is_empty()) {
+        args.push("--reason");
+        args.push(r);
+    }
+    args.push(path_str.as_ref());
+    git.git(&args)?;
+    Ok(())
+}
+
+pub fn unlock_worktree(git: &GitRunner, path: &Path) -> Result<()> {
+    let path_str = path.to_string_lossy();
+    git.git(&["worktree", "unlock", path_str.as_ref()])?;
+    Ok(())
+}
+
+pub fn remove_worktree(git: &GitRunner, path: &Path, force: bool) -> Result<()> {
+    let path_str = path.to_string_lossy();
+    let mut args = vec!["worktree", "remove"];
+    if force {
+        args.push("--force");
+    }
+    args.push(path_str.as_ref());
+    git.git(&args)?;
+    Ok(())
+}
+
+pub fn detach_worktree_head(git: &GitRunner, worktree_path: &Path) -> Result<()> {
+    let path_str = worktree_path.to_string_lossy();
+    git.git(&["-C", path_str.as_ref(), "checkout", "--detach"])?;
+    Ok(())
+}
+
+pub fn checkout_branch_in_worktree(
+    git: &GitRunner,
+    worktree_path: &Path,
+    branch: &str,
+    create: bool,
+) -> Result<()> {
+    let path_str = worktree_path.to_string_lossy();
+    if create {
+        git.git(&["-C", path_str.as_ref(), "checkout", "-b", branch])?;
+    } else {
+        git.git(&["-C", path_str.as_ref(), "checkout", branch])?;
+    }
+    Ok(())
+}
+
+pub fn is_worktree_dirty(git: &GitRunner, worktree_path: &Path) -> Result<bool> {
+    let path_str = worktree_path.to_string_lossy();
+    let out = git.git(&["-C", path_str.as_ref(), "status", "--porcelain"])?;
+    Ok(!out.trim().is_empty())
+}
+
+pub fn get_history_path(git: &GitRunner) -> Option<PathBuf> {
+    git.git(&["config", "--get", "cep.history-path"])
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
+
+pub fn set_history_path(git: &GitRunner, path: &Path) -> Result<()> {
+    let path_str = path.to_string_lossy();
+    git.git(&["config", "cep.history-path", path_str.as_ref()])?;
+    Ok(())
+}
+
+pub fn get_agent_marker(git: &GitRunner, worktree_name: &str) -> Option<String> {
+    let key = format!("cep.state.{}.marker", worktree_name);
+    git.git(&["config", "--get", &key])
+        .ok()
+        .filter(|v| !v.is_empty())
+}
+
+fn normalize_path(path: &Path) -> PathBuf {
+    if let Ok(canon) = path.canonicalize() {
+        return canon;
+    }
+    if let (Some(parent), Some(name)) = (path.parent(), path.file_name()) {
+        if let Ok(canon_parent) = parent.canonicalize() {
+            return canon_parent.join(name);
+        }
+    }
+    path.to_path_buf()
+}
+
+/// Resolve `target` against `worktrees` in strict precedence order:
+/// 1. Exact match on `short_name`
+/// 2. Exact match on checked-out branch name
+/// 3. Filesystem path (canonicalized or relative to `git.cwd()`)
+pub fn resolve_worktree_target(
+    git: &GitRunner,
+    worktrees: &[WorktreeInfo],
+    target: &str,
+) -> Option<WorktreeInfo> {
+    if let Some(by_name) = worktrees.iter().find(|wt| wt.short_name == target) {
+        return Some(by_name.clone());
+    }
+
+    if let Some(by_branch) = worktrees.iter().find(|wt| wt.branch_name() == Some(target)) {
+        return Some(by_branch.clone());
+    }
+
+    let raw_target = Path::new(target);
+    let candidate = if raw_target.is_absolute() {
+        raw_target.to_path_buf()
+    } else {
+        git.cwd().join(raw_target)
+    };
+    let norm_candidate = normalize_path(&candidate);
+    let norm_raw = normalize_path(raw_target);
+
+    worktrees
+        .iter()
+        .find(|wt| {
+            let norm_wt = normalize_path(&wt.path);
+            norm_wt == norm_candidate
+                || norm_wt == norm_raw
+                || wt.path == candidate
+                || wt.path == raw_target
+        })
+        .cloned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +350,55 @@ detached
         assert_eq!(list[2].short_name, "pool-2");
         assert_eq!(list[2].head, WorktreeHead::Detached);
         assert_eq!(list[2].branch_name(), None);
+    }
+
+    #[test]
+    fn test_resolve_worktree_target_strict_precedence() {
+        let git = GitRunner::new("/Users/dev/repo", false);
+        let worktrees = vec![
+            WorktreeInfo {
+                path: PathBuf::from("/Users/dev/repo"),
+                short_name: "repo".to_string(),
+                head_sha: "1111111".to_string(),
+                head: WorktreeHead::Branch("main".to_string()),
+                is_current: true,
+                is_main: true,
+                locked: None,
+                prunable: None,
+            },
+            WorktreeInfo {
+                path: PathBuf::from("/Users/dev/worktrees/syrah"),
+                short_name: "syrah".to_string(),
+                head_sha: "2222222".to_string(),
+                head: WorktreeHead::Branch("feat/login".to_string()),
+                is_current: false,
+                is_main: false,
+                locked: None,
+                prunable: None,
+            },
+            WorktreeInfo {
+                path: PathBuf::from("/Users/dev/worktrees/merlot"),
+                short_name: "merlot".to_string(),
+                head_sha: "3333333".to_string(),
+                head: WorktreeHead::Branch("syrah".to_string()),
+                is_current: false,
+                is_main: false,
+                locked: None,
+                prunable: None,
+            },
+        ];
+
+        // 1. Short name beats checked-out branch with the same name ("syrah")
+        let resolved = resolve_worktree_target(&git, &worktrees, "syrah").unwrap();
+        assert_eq!(resolved.short_name, "syrah");
+
+        // 2. Checked-out branch matches when no short name matches
+        let by_branch = resolve_worktree_target(&git, &worktrees, "feat/login").unwrap();
+        assert_eq!(by_branch.short_name, "syrah");
+
+        // 3. Path matches when neither short name nor branch matches
+        let by_path =
+            resolve_worktree_target(&git, &worktrees, "/Users/dev/worktrees/merlot").unwrap();
+        assert_eq!(by_path.short_name, "merlot");
     }
 }

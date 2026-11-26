@@ -21,10 +21,12 @@ fn config_help_section() -> String {
             "Configuration:\n\
              \x20 No configuration file found (using built-in defaults).\n\
              \x20 You can configure sarment in:\n\
-             \x20   - {} (global)\n\
-             \x20   - {} (local directory or any parent directory)",
-            color_str("~/.config/sarment/config.toml", "cyan"),
-            color_str("./.sarment", "cyan"),
+             \x20   - {} or {} (global)\n\
+             \x20   - {} or {} (local directory or any parent directory)",
+            color_str("~/.config/vignoble/config.toml", "cyan"),
+            color_str("~/.config/vignoble.toml", "cyan"),
+            color_str("./.vignoble", "cyan"),
+            color_str("./.vignoble.toml", "cyan"),
         )
     } else {
         let list = active_paths
@@ -129,6 +131,7 @@ enum Commands {
     All,
 
     /// List branches in the given stage (e.g. prod, preprod, staging, dev)
+    #[command(visible_alias = "ls")]
     List {
         /// Stage name (defaults to "prod" if omitted)
         #[arg(default_value = "prod")]
