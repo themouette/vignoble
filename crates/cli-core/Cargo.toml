@@ -1,0 +1,21 @@
+[package]
+name = "cli-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Shared CLI foundation for git-workflow tools"
+
+[dependencies]
+clap.workspace = true
+console.workspace = true
+dirs.workspace = true
+self_update.workspace = true
+semver.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
