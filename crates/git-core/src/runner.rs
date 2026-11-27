@@ -104,6 +104,19 @@ impl GitRunner {
         }
     }
 
+    pub fn remotes(&self) -> Result<Vec<String>> {
+        let out = self.git(&["remote"])?;
+        let mut list: Vec<String> = out
+            .lines()
+            .map(str::trim)
+            .filter(|r| !r.is_empty())
+            .map(String::from)
+            .collect();
+        // Longest remote name wins when one remote name is a path prefix of another.
+        list.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+        Ok(list)
+    }
+
     pub fn branch_exists(&self, branch: &str, remote: Option<&str>) -> bool {
         let full_ref = match remote {
             Some(r) => format!("refs/remotes/{}/{}", r, branch),
@@ -161,6 +174,19 @@ impl GitRunner {
         self.call_git_interactive(&["fetch", "-p", "--no-tags", remote])
     }
 
+    pub fn fetch_branches(&self, remote: &str, branches: &[String]) -> Result<()> {
+        if branches.is_empty() {
+            return Ok(());
+        }
+        println!("Fetching from {} ({})...", remote, branches.join(", "));
+        let mut args = Vec::with_capacity(3 + branches.len());
+        args.push("fetch");
+        args.push("--no-tags");
+        args.push(remote);
+        args.extend(branches.iter().map(String::as_str));
+        self.call_git_interactive(&args)
+    }
+
     pub fn delete_local_branch(&self, branch: &str, force: bool) -> Result<()> {
         let flag = if force { "-D" } else { "-d" };
         self.git(&["branch", flag, branch])?;
@@ -171,5 +197,49 @@ impl GitRunner {
         let refspec = format!(":{}", branch);
         self.git(&["push", remote, &refspec])?;
         Ok(())
+    }
+}
+
+/// Match `<remote>/<branch>` only when `<remote>` is a configured git remote, so slashed
+/// branch names (such as `release/v1`) are not mistaken for remote prefixes.
+pub fn split_remote_branch<'a>(
+    spec: &'a str,
+    known_remotes: &[String],
+) -> Option<(&'a str, &'a str)> {
+    for remote in known_remotes {
+        if let Some(rest) = spec.strip_prefix(remote.as_str()) {
+            if let Some(branch) = rest.strip_prefix('/') {
+                if !branch.is_empty() {
+                    return Some((&spec[..remote.len()], branch));
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_split_remote_branch_only_matches_known_remotes() {
+        let remotes = vec!["deploy".to_string(), "origin".to_string()];
+
+        assert_eq!(
+            split_remote_branch("origin/main", &remotes),
+            Some(("origin", "main"))
+        );
+        assert_eq!(
+            split_remote_branch("deploy/prod", &remotes),
+            Some(("deploy", "prod"))
+        );
+        assert_eq!(
+            split_remote_branch("deploy/release/2026", &remotes),
+            Some(("deploy", "release/2026"))
+        );
+        assert_eq!(split_remote_branch("release/2026", &remotes), None);
+        assert_eq!(split_remote_branch("main", &remotes), None);
+        assert_eq!(split_remote_branch("origin/", &remotes), None);
     }
 }

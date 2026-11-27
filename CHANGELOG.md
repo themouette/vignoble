@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `git-core` / `sarment`: Support stage branches on secondary git remotes (such as `deploy/prod` and `deploy/preprod`), fetch configured secondary stage branches automatically, and protect local reference branches when stage targets use `<remote>/<branch>` names.
+
 ## [0.1.2] - 2026-11-27
 
 ### Changed

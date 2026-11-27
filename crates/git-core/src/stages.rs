@@ -1,7 +1,7 @@
 use crate::{
     error::{GitError, Result},
     refs::{guess_upstream, list_branches_by_merge},
-    runner::GitRunner,
+    runner::{split_remote_branch, GitRunner},
     squash::search_for_squash_commit,
 };
 use std::collections::HashSet;
@@ -52,9 +52,10 @@ pub fn resolve_waterfall_stages(
     let mut reference_branches: HashSet<String> = HashSet::new();
     let mut claimed_branches: HashSet<String> = HashSet::new();
     let mut first_valid_target_ref: Option<String> = None;
+    let known_remotes = git.remotes().unwrap_or_default();
 
     // Pre-collect all candidate branches in committerdate order.
-    let all_candidates = list_all_candidates(git, remote, pattern)?;
+    let all_candidates = list_all_candidates(git, remote, &known_remotes, pattern)?;
 
     // Register all stage target branches up front so a lower stage branch (such as `preprod`)
     // is never listed as a feature branch inside an earlier stage (such as `prod`).
@@ -62,9 +63,13 @@ pub fn resolve_waterfall_stages(
     for (idx, def) in definitions.iter().enumerate() {
         match &def.mode {
             StageMode::Branch(branch_name) => {
-                if stage_branch_exists(git, branch_name, remote) {
-                    reference_branches.insert(branch_name.clone());
-                    reference_branches.insert(format!("{}/{}", remote, branch_name));
+                if stage_branch_exists(git, branch_name, remote, &known_remotes) {
+                    register_reference_branch(
+                        &mut reference_branches,
+                        branch_name,
+                        remote,
+                        &known_remotes,
+                    );
                     stage_targets.push((idx, Some(branch_name.clone())));
                 } else {
                     stage_targets.push((idx, None));
@@ -72,9 +77,13 @@ pub fn resolve_waterfall_stages(
             }
             StageMode::BranchScript(script) => {
                 let resolved = match run_branch_script(git, script, remote) {
-                    Ok(Some(b)) if stage_branch_exists(git, &b, remote) => {
-                        reference_branches.insert(b.clone());
-                        reference_branches.insert(format!("{}/{}", remote, b));
+                    Ok(Some(b)) if stage_branch_exists(git, &b, remote, &known_remotes) => {
+                        register_reference_branch(
+                            &mut reference_branches,
+                            &b,
+                            remote,
+                            &known_remotes,
+                        );
                         Some(b)
                     }
                     Ok(_) => None,
@@ -105,6 +114,7 @@ pub fn resolve_waterfall_stages(
                     def,
                     target_branch,
                     remote,
+                    &known_remotes,
                     pattern,
                     enable_squash,
                     &mut reference_branches,
@@ -169,6 +179,7 @@ fn evaluate_branch_stage(
     def: &StageDefinition,
     target_branch: &str,
     remote: &str,
+    known_remotes: &[String],
     pattern: Option<&str>,
     enable_squash: bool,
     reference_branches: &mut HashSet<String>,
@@ -184,8 +195,7 @@ fn evaluate_branch_stage(
         *first_valid_target_ref = Some(upstream_ref.clone());
     }
 
-    reference_branches.insert(target_branch.to_string());
-    reference_branches.insert(format!("{}/{}", remote, target_branch));
+    register_reference_branch(reference_branches, target_branch, remote, known_remotes);
 
     let merged = list_branches_by_merge(git, &upstream_ref, true, pattern)?;
     let mut stage_entries = Vec::new();
@@ -203,7 +213,9 @@ fn evaluate_branch_stage(
 
     if enable_squash {
         let unmerged = list_branches_by_merge(git, &upstream_ref, false, pattern)?;
-        let squash_ref = if git.branch_exists(target_branch, Some(remote)) {
+        let squash_ref = if split_remote_branch(target_branch, known_remotes).is_some() {
+            target_branch.to_string()
+        } else if git.branch_exists(target_branch, Some(remote)) {
             format!("{}/{}", remote, target_branch)
         } else {
             target_branch.to_string()
@@ -233,13 +245,39 @@ fn evaluate_branch_stage(
     }))
 }
 
-fn stage_branch_exists(git: &GitRunner, branch: &str, remote: &str) -> bool {
+fn register_reference_branch(
+    reference_branches: &mut HashSet<String>,
+    branch: &str,
+    remote: &str,
+    known_remotes: &[String],
+) {
+    reference_branches.insert(branch.to_string());
+    if let Some((stage_remote, short_branch)) = split_remote_branch(branch, known_remotes) {
+        reference_branches.insert(short_branch.to_string());
+        reference_branches.insert(format!("{}/{}", stage_remote, short_branch));
+        reference_branches.insert(format!("{}/{}", remote, short_branch));
+    } else {
+        reference_branches.insert(format!("{}/{}", remote, branch));
+    }
+}
+
+fn stage_branch_exists(
+    git: &GitRunner,
+    branch: &str,
+    remote: &str,
+    known_remotes: &[String],
+) -> bool {
+    if let Some((stage_remote, short_branch)) = split_remote_branch(branch, known_remotes) {
+        return git.branch_exists(short_branch, Some(stage_remote))
+            || git.branch_exists(branch, None);
+    }
     git.branch_exists(branch, Some(remote)) || git.branch_exists(branch, None)
 }
 
 fn list_all_candidates(
     git: &GitRunner,
     remote: &str,
+    known_remotes: &[String],
     pattern: Option<&str>,
 ) -> Result<Vec<String>> {
     let mut args = vec![
@@ -258,7 +296,13 @@ fn list_all_candidates(
     Ok(out
         .lines()
         .map(str::trim)
-        .filter(|b| !b.is_empty() && *b != head_suffix && *b != remote)
+        .filter(|b| {
+            !b.is_empty()
+                && *b != head_suffix
+                && !b.ends_with("/HEAD")
+                && *b != remote
+                && !known_remotes.iter().any(|r| r == *b)
+        })
         .map(String::from)
         .collect())
 }
