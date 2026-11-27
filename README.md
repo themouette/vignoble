@@ -45,10 +45,12 @@ sarment clean prod            # Delete branches merged in prod (skips branches c
 ### `vignoble` — Suite & Agent Plugin Management
 
 ```bash
-vignoble update               # Self-update vignoble, refresh suite links, and upgrade installed plugins
-vignoble postinstall          # Ensure cep and sarment links exist next to vignoble
-vignoble plugin install       # Install vignoble skill and activity hooks for Pi and Claude Code
-vignoble plugin status        # Check installed agent plugin status
+vignoble update                   # Self-update vignoble, refresh suite links, and upgrade installed plugins
+vignoble postinstall              # Ensure cep and sarment links exist next to vignoble
+vignoble plugin install [agents]  # Install skill & hooks for Pi / Claude Code (interactive menu when omitted)
+vignoble plugin uninstall [agents]# Remove skill & hooks (interactive menu when omitted)
+vignoble plugin upgrade           # Upgrade already-installed agent plugins to match current version
+vignoble plugin status            # Check installed agent plugin status
 ```
 
 ## Configuration

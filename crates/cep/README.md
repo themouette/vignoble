@@ -10,10 +10,10 @@ curl -fsSL https://raw.githubusercontent.com/themouette/vignoble/main/install.sh
 
 This installs `vignoble`, `sarment`, and `cep` to `~/.local/bin`.
 
-For directory navigation (`cep cd`), add shell integration to your `~/.zshrc` or `~/.bashrc`:
+For directory navigation (`cep cd`) and tab completions, add shell integration to your `~/.zshrc` or `~/.bashrc`:
 
 ```bash
-eval "$(vignoble shell-init)"
+eval "$(vignoble shell-init --with-completion)"
 ```
 
 ## Usage
