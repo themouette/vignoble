@@ -4,6 +4,7 @@ members = [
     "crates/cep",
     "crates/cli-core",
     "crates/git-core",
+    "crates/saisonnier",
     "crates/sarment",
     "crates/vignoble",
 ]

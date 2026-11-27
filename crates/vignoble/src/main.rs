@@ -127,6 +127,9 @@ pub fn render_shell_init(shell: Shell, with_completion: bool) -> String {
     let mut cep_cmd = cep::build_cli();
     generate(clap_shell, &mut cep_cmd, "cep", &mut buf);
 
+    let mut saisonnier_cmd = saisonnier::build_cli();
+    generate(clap_shell, &mut saisonnier_cmd, "saisonnier", &mut buf);
+
     let completions = String::from_utf8_lossy(&buf);
     format!("{}\n\n{}", wrapper, completions.trim_end())
 }
@@ -135,7 +138,7 @@ pub fn render_shell_init(shell: Shell, with_completion: bool) -> String {
 #[command(
     name = "vignoble",
     version = VERSION,
-    about = "Manage the vignoble git workflow suite (vignoble, sarment, cep)"
+    about = "Manage the vignoble git workflow suite (vignoble, sarment, cep, saisonnier)"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -147,7 +150,7 @@ enum Commands {
     /// Update vignoble and refresh suite links and installed agent plugins
     Update(UpdateArgs),
 
-    /// Ensure suite CLI links (sarment, cep) exist and refresh installed agent plugins
+    /// Ensure suite CLI links (sarment, cep, saisonnier) exist and refresh installed agent plugins
     Postinstall(PostinstallArgs),
 
     /// Output shell integration wrapper for cep and optional tab completions
@@ -156,7 +159,7 @@ enum Commands {
         #[arg(long, value_enum)]
         shell: Option<Shell>,
 
-        /// Include shell tab completions for vignoble, sarment, and cep
+        /// Include shell tab completions for vignoble, sarment, cep, and saisonnier
         #[arg(long)]
         with_completion: bool,
     },
@@ -202,6 +205,7 @@ fn main() {
         match invoked_tool_name(Path::new(first)) {
             Some("sarment") => sarment::main_from_args(args),
             Some("cep") => cep::main_from_args(args),
+            Some("saisonnier") => saisonnier::main_from_args(args),
             _ => {}
         }
     }
@@ -247,8 +251,9 @@ fn run(cli: Cli) -> Result<()> {
             match subtool_str.as_ref() {
                 "sarment" => sarment::main_from_args(forwarded),
                 "cep" => cep::main_from_args(forwarded),
+                "saisonnier" => saisonnier::main_from_args(forwarded),
                 other => anyhow::bail!(
-                    "Unknown command '{}'. Available suite tools: sarment, cep",
+                    "Unknown command '{}'. Available suite tools: sarment, cep, saisonnier",
                     other
                 ),
             }
@@ -317,6 +322,7 @@ mod tests {
             assert!(out.contains("vignoble"));
             assert!(out.contains("sarment"));
             assert!(out.contains("cep"));
+            assert!(out.contains("saisonnier"));
         }
     }
 
@@ -352,6 +358,18 @@ mod tests {
         assert_eq!(
             invoked_tool_name(Path::new("vignoble-dev")),
             Some("vignoble")
+        );
+        assert_eq!(
+            invoked_tool_name(Path::new("/Users/dev/.local/bin/saisonnier")),
+            Some("saisonnier")
+        );
+        assert_eq!(
+            invoked_tool_name(Path::new("/Users/dev/.local/bin/saisonnier-dev")),
+            Some("saisonnier")
+        );
+        assert_eq!(
+            invoked_tool_name(Path::new("/Users/dev/.local/bin/saisonnier-debug")),
+            Some("saisonnier")
         );
     }
 }

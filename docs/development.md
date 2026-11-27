@@ -8,42 +8,43 @@
 - **`crates/git-core`**: Shared raw-`git` runner, porcelain worktree parser, batched ref/upstream sync inspector, squash-merge detector, and waterfall stage resolver.
 - **`crates/sarment`**: Library crate implementing the `sarment` CLI (`all`, `list`, `clean`).
 - **`crates/cep`**: Library crate implementing the `cep` worktree pool CLI (`list`, `create`, `cd`, `detach`, `claim`, `release`, `remove`).
+- **`crates/saisonnier`**: Library crate implementing the `saisonnier` autonomous worker CLI (`list`, `enqueue`, `edit`, `cancel`, `clean`, `logs`, `inspect`, `resume`, `tick`).
 - **`crates/vignoble`**: The single compiled binary (`vignoble`) handling `argv[0]` multicall dispatch, `update`, `postinstall`, `shell-init`, `plugin`, and `agent-state`.
 
 ---
 
 ## Side-by-Side Release, `-dev`, and `-debug` Binaries
 
-You can keep the production release (`vignoble`, `cep`, `sarment`), a local optimized build (`vignoble-dev`, `cep-dev`, `sarment-dev`), and a local debug build (`vignoble-debug`, `cep-debug`, `sarment-debug`) installed side-by-side in `~/.local/bin`.
+You can keep the production release (`vignoble`, `cep`, `sarment`, `saisonnier`), a local optimized build (`vignoble-dev`, `cep-dev`, `sarment-dev`, `saisonnier-dev`), and a local debug build (`vignoble-debug`, `cep-debug`, `sarment-debug`, `saisonnier-debug`) installed side-by-side in `~/.local/bin`.
 
 `vignoble postinstall` automatically detects how it was built from its executable path (`std::env::current_exe()`), with **no flags required**:
 
 | Executable Path (`current_exe()`) | Detected Target | Target Directory | Links Created |
 | :--- | :--- | :--- | :--- |
-| `.../target/release/vignoble` | Local release (`-dev`) | `~/.local/bin` | `vignoble-dev -> .../target/release/vignoble`<br>`cep-dev -> vignoble-dev`<br>`sarment-dev -> vignoble-dev` |
-| `.../target/debug/vignoble` | Local debug (`-debug`) | `~/.local/bin` | `vignoble-debug -> .../target/debug/vignoble`<br>`cep-debug -> vignoble-debug`<br>`sarment-debug -> vignoble-debug` |
-| `~/.local/bin/vignoble` *(or any other directory)* | Installed release (no suffix) | Same directory as `vignoble` | `cep -> vignoble`<br>`sarment -> vignoble` |
+| `.../target/release/vignoble` | Local release (`-dev`) | `~/.local/bin` | `vignoble-dev -> .../target/release/vignoble`<br>`cep-dev -> vignoble-dev`<br>`sarment-dev -> vignoble-dev`<br>`saisonnier-dev -> vignoble-dev` |
+| `.../target/debug/vignoble` | Local debug (`-debug`) | `~/.local/bin` | `vignoble-debug -> .../target/debug/vignoble`<br>`cep-debug -> vignoble-debug`<br>`sarment-debug -> vignoble-debug`<br>`saisonnier-debug -> vignoble-debug` |
+| `~/.local/bin/vignoble` *(or any other directory)* | Installed release (no suffix) | Same directory as `vignoble` | `cep -> vignoble`<br>`sarment -> vignoble`<br>`saisonnier -> vignoble` |
 
 ### Setting Up Local `-dev` and `-debug` Links
 
-1. **Link the `-debug` suite (`vignoble-debug`, `cep-debug`, `sarment-debug`):**
+1. **Link the `-debug` suite (`vignoble-debug`, `cep-debug`, `sarment-debug`, `saisonnier-debug`):**
    ```bash
    cargo run --bin vignoble -- postinstall
    ```
-2. **Link the `-dev` suite (`vignoble-dev`, `cep-dev`, `sarment-dev`):**
+2. **Link the `-dev` suite (`vignoble-dev`, `cep-dev`, `sarment-dev`, `saisonnier-dev`):**
    ```bash
    cargo build --release
    ./target/release/vignoble postinstall
    ```
 
 Because `~/.local/bin/vignoble-dev` and `~/.local/bin/vignoble-debug` are symlinks pointing directly to `target/release/vignoble` and `target/debug/vignoble`:
-- Every subsequent `cargo build` immediately updates `vignoble-debug`, `cep-debug`, and `sarment-debug`.
-- Every subsequent `cargo build --release` immediately updates `vignoble-dev`, `cep-dev`, and `sarment-dev`.
-- Your production `~/.local/bin/vignoble`, `cep`, and `sarment` remain untouched.
+- Every subsequent `cargo build` immediately updates `vignoble-debug`, `cep-debug`, `sarment-debug`, and `saisonnier-debug`.
+- Every subsequent `cargo build --release` immediately updates `vignoble-dev`, `cep-dev`, `sarment-dev`, and `saisonnier-dev`.
+- Your production `~/.local/bin/vignoble`, `cep`, `sarment`, and `saisonnier` remain untouched.
 
 ### How `argv[0]` Dispatch & Shell Integration Work With Suffixes
 
-- **`argv[0]` Dispatch:** `invoked_tool_name()` strips `-dev` and `-debug` suffixes from `argv[0]`, so invoking `cep-dev` or `cep-debug` dispatches to `cep`, and `sarment-dev` or `sarment-debug` dispatches to `sarment`.
+- **`argv[0]` Dispatch:** `invoked_tool_name()` strips `-dev` and `-debug` suffixes from `argv[0]`, so invoking `cep-dev` or `cep-debug` dispatches to `cep`, `sarment-dev` or `sarment-debug` dispatches to `sarment`, and `saisonnier-dev` or `saisonnier-debug` dispatches to `saisonnier`.
 - **Shell Integration (`cep cd`):** `eval "$(vignoble shell-init --with-completion)"` defines wrapper functions for `cep`, `cep-dev`, and `cep-debug` so `cep-dev cd <target>` and `cep-debug cd <target>` change directories in your active shell.
 
 ---

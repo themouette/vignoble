@@ -76,9 +76,9 @@ impl GitRunner {
         }
     }
 
-    /// Resolve the main repository root directory even when invoked inside a linked worktree.
-    pub fn main_repo_root(&self) -> Result<PathBuf> {
-        let toplevel = self.ensure_git_repository()?;
+    /// Resolve the shared git common directory (canonicalized when possible).
+    pub fn git_common_dir(&self) -> Result<PathBuf> {
+        self.ensure_git_repository()?;
         let common_dir_raw = self.git(&["rev-parse", "--git-common-dir"])?;
         let common_dir = Path::new(&common_dir_raw);
         let abs_common = if common_dir.is_absolute() {
@@ -86,7 +86,13 @@ impl GitRunner {
         } else {
             self.cwd.join(common_dir)
         };
-        let canonical_common = abs_common.canonicalize().unwrap_or(abs_common);
+        Ok(abs_common.canonicalize().unwrap_or(abs_common))
+    }
+
+    /// Resolve the main repository root directory even when invoked inside a linked worktree.
+    pub fn main_repo_root(&self) -> Result<PathBuf> {
+        let toplevel = self.ensure_git_repository()?;
+        let canonical_common = self.git_common_dir()?;
         if canonical_common.file_name().and_then(|s| s.to_str()) == Some(".git") {
             if let Some(parent) = canonical_common.parent() {
                 return Ok(parent.to_path_buf());

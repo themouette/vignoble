@@ -480,3 +480,25 @@ fn test_claim_shell_eval_no_cd_stderr_hygiene_and_history() {
         .trim()
         .is_empty());
 }
+
+#[test]
+fn test_saisonnier_env_blocks_cep_claim_detach_and_release() {
+    let env = TestGitEnv::setup();
+    env.cmd().args(["create", "syrah"]).assert().success();
+
+    for (cmd_name, args) in [
+        ("claim", vec!["claim", "syrah"]),
+        ("detach", vec!["detach", "syrah"]),
+        ("release", vec!["release", "syrah"]),
+    ] {
+        env.cmd()
+            .env("VIGNOBLE_SAISONNIER", "1")
+            .args(&args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(format!(
+                "Cannot run 'cep {}' inside a managed saisonnier session (VIGNOBLE_SAISONNIER=1)",
+                cmd_name
+            )));
+    }
+}

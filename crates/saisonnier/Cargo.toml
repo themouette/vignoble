@@ -1,0 +1,25 @@
+[package]
+name = "saisonnier"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Autonomous task runner for the vignoble git workflow suite"
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+cli-core = { path = "../cli-core" }
+console.workspace = true
+dirs.workspace = true
+git-core = { path = "../git-core" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+toml.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true

@@ -1,4 +1,7 @@
-use crate::{commands::ExecutionContext, names::pick_unused_cepage};
+use crate::{
+    commands::{ensure_not_managed_saisonnier, ExecutionContext},
+    names::pick_unused_cepage,
+};
 use anyhow::{anyhow, bail, Result};
 use clap::Args;
 use cli_core::ui::{color_str, GREEN_TICK_SYMBOL};
@@ -53,6 +56,7 @@ pub struct ClaimArgs {
 }
 
 pub fn execute(ctx: &ExecutionContext, args: &ClaimArgs) -> Result<()> {
+    ensure_not_managed_saisonnier("claim")?;
     let worktrees = list_worktrees(&ctx.git)?;
     let base_ref = ctx.config.resolve_base_ref(&ctx.git, args.base.as_deref());
 

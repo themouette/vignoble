@@ -21,6 +21,7 @@ console.workspace = true
 dialoguer.workspace = true
 dirs.workspace = true
 git-core = { path = "../git-core" }
+saisonnier = { path = "../saisonnier" }
 sarment = { path = "../sarment" }
 serde.workspace = true
 serde_json.workspace = true

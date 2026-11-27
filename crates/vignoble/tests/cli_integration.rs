@@ -23,7 +23,8 @@ fn test_multicall_dispatch_via_postinstall_links_and_subcommands() {
         .assert()
         .success()
         .stdout(predicate::str::contains("sarment"))
-        .stdout(predicate::str::contains("cep"));
+        .stdout(predicate::str::contains("cep"))
+        .stdout(predicate::str::contains("saisonnier"));
 
     // Invoke `sarment --help` via the created link in `bin_dir`
     let sarment_link = bin_dir.join(format!("sarment{}", std::env::consts::EXE_SUFFIX));
@@ -63,7 +64,17 @@ fn test_multicall_dispatch_via_postinstall_links_and_subcommands() {
         .stdout(predicate::str::contains("🤖"))
         .stdout(predicate::str::contains("💬"));
 
-    // Also verify `vignoble sarment --help` and `vignoble cep --help` fallback dispatch
+    // Invoke `saisonnier --help` via the created link in `bin_dir`
+    let saisonnier_link = bin_dir.join(format!("saisonnier{}", std::env::consts::EXE_SUFFIX));
+    Command::new(&saisonnier_link)
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Run autonomous coding-agent tasks across a pool of cep worktrees",
+        ));
+
+    // Also verify `vignoble sarment --help`, `vignoble cep --help`, and `vignoble saisonnier --help` fallback dispatch
     Command::new(&vignoble_dst)
         .args(["sarment", "--help"])
         .assert()
@@ -78,6 +89,14 @@ fn test_multicall_dispatch_via_postinstall_links_and_subcommands() {
         .success()
         .stdout(predicate::str::contains(
             "Manage a pool of long-living, reusable git worktrees",
+        ));
+
+    Command::new(&vignoble_dst)
+        .args(["saisonnier", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Run autonomous coding-agent tasks across a pool of cep worktrees",
         ));
 }
 
