@@ -33,7 +33,8 @@ fn test_multicall_dispatch_via_postinstall_links_and_subcommands() {
         .success()
         .stdout(predicate::str::contains(
             "Check the status of your branches across workflow stages",
-        ));
+        ))
+        .stdout(predicate::str::contains("Meaning of the symbols:"));
 
     // Invoke `cep --help` via the created link in `bin_dir`
     let cep_link = bin_dir.join(format!("cep{}", std::env::consts::EXE_SUFFIX));
@@ -43,7 +44,24 @@ fn test_multicall_dispatch_via_postinstall_links_and_subcommands() {
         .success()
         .stdout(predicate::str::contains(
             "Manage a pool of long-living, reusable git worktrees",
-        ));
+        ))
+        .stdout(predicate::str::contains("Meaning of the symbols:"))
+        .stdout(predicate::str::contains(
+            "Agent harness icons (set via `vignoble plugin install`):",
+        ))
+        .stdout(predicate::str::contains("🤖"))
+        .stdout(predicate::str::contains("💬"));
+
+    // Verify `vignoble plugin --help` also surfaces the shared agent harness icons section
+    Command::new(&vignoble_dst)
+        .args(["plugin", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "Agent harness icons (set via `vignoble plugin install`):",
+        ))
+        .stdout(predicate::str::contains("🤖"))
+        .stdout(predicate::str::contains("💬"));
 
     // Also verify `vignoble sarment --help` and `vignoble cep --help` fallback dispatch
     Command::new(&vignoble_dst)

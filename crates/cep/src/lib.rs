@@ -4,7 +4,7 @@ pub mod names;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
-use cli_core::ui::color_str;
+use cli_core::ui::{agent_symbols_help_section, color_str, sync_symbols_help_section};
 use commands::{
     cd::{self, CdArgs},
     claim::{self, ClaimArgs},
@@ -53,7 +53,9 @@ fn colored_after_help() -> String {
     let bin_name = "cep";
 
     format!(
-        "Target resolution precedence:\n\
+        "{}\n\n\
+         {}\n\n\
+         Target resolution precedence:\n\
          \x20 1. Worktree short name (e.g. 'syrah', 'merlot')\n\
          \x20 2. Checked-out branch name (e.g. 'feat/login')\n\
          \x20 3. Filesystem path\n\n\
@@ -70,6 +72,8 @@ fn colored_after_help() -> String {
          \x20 {bin_name} cd syrah\n\
          \x20 {bin_name} cd -\n\n\
          {}",
+        sync_symbols_help_section(),
+        agent_symbols_help_section(),
         config_help_section(),
         bin_name = bin_name,
     )

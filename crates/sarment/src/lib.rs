@@ -4,10 +4,7 @@ pub mod printer;
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
-use cli_core::ui::{
-    color_str, DIVERGED_SYMBOL, NEED_PULL_SYMBOL, NEED_PUSH_SYMBOL, UNKNOWN_UPSTREAM_SYMBOL,
-    UPSTREAM_ONLY_SYMBOL, UP_TO_DATE_SYMBOL,
-};
+use cli_core::ui::{color_str, sync_symbols_help_section};
 use commands::{all, clean, list, ExecutionContext};
 use config::{discover_config_paths, EffectiveConfig};
 use git_core::GitRunner;
@@ -47,13 +44,7 @@ fn colored_after_help() -> String {
     let bin_name = "sarment";
 
     format!(
-        "Meaning of the symbols:\n\
-         \x20 * {}: upstream only, (there might be a local branch as well)\n\
-         \x20 * {}: the branch is up to date with upstream\n\
-         \x20 * {}: upstream is behind local branch, you need to push\n\
-         \x20 * {}: local branch is behind upstream, you need to pull\n\
-         \x20 * {}: local branch and upstream have diverged\n\
-         \x20 * {}: local only, there is no known upstream\n\n\
+        "{}\n\n\
          More usage examples:\n\n\
          \x20 # Show local status\n\
          \x20 {bin_name}\n\n\
@@ -64,12 +55,7 @@ fn colored_after_help() -> String {
          \x20 # Show all your branches in production\n\
          \x20 {bin_name} list prod\n\n\
          {}",
-        color_str(UPSTREAM_ONLY_SYMBOL, "green"),
-        color_str(UP_TO_DATE_SYMBOL, "green"),
-        color_str(NEED_PUSH_SYMBOL, "orange"),
-        color_str(NEED_PULL_SYMBOL, "orange"),
-        color_str(DIVERGED_SYMBOL, "red"),
-        color_str(UNKNOWN_UPSTREAM_SYMBOL, "red"),
+        sync_symbols_help_section(),
         config_help_section(),
         bin_name = bin_name,
     )
