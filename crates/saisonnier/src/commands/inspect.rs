@@ -97,6 +97,9 @@ pub fn execute(ctx: &ExecutionContext, args: &InspectArgs) -> Result<()> {
         if let Some(code) = receipt.exit_code {
             println!("  Exit code:   {}", code);
         }
+        if let Some(ref summary) = receipt.summary {
+            println!("  Summary:     {}", summary);
+        }
         println!("  Log:         {}", receipt.log_path.display());
         println!(
             "  Session:     {} ({})",

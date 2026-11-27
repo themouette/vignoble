@@ -12,7 +12,7 @@ use anyhow::{bail, Result};
 use clap::Args;
 use git_core::{
     worktree::{
-        checkout_branch_in_worktree, list_worktrees, lock_worktree, set_agent_marker,
+        checkout_branch_in_worktree, detach_worktree_head, list_worktrees, lock_worktree,
         unlock_worktree, worktree_head_sha,
     },
     WorktreeHead, WorktreeInfo,
@@ -78,7 +78,8 @@ pub fn execute(ctx: &ExecutionContext, args: &TickArgs) -> Result<()> {
                         failed.finished_at = Some(now_iso8601_utc());
                         failed.summary = Some(format!("Failed to start tmux session: {}", err));
                         let _ = ctx.store.write_receipt(&failed);
-                        let _ = set_agent_marker(&ctx.git, &cep.short_name, "⚠️");
+                        let _ = detach_worktree_head(&ctx.git, &cep.path);
+                        let _ = unlock_worktree(&ctx.git, &cep.path);
                         return Err(err);
                     }
                 }
@@ -152,12 +153,15 @@ fn claim_and_prepare(
     let base = ctx.config.resolve_base_ref(&ctx.git, task.base.as_deref());
     let branch = match task.branch.as_deref().filter(|b| !b.is_empty()) {
         Some(explicit) => explicit.to_string(),
-        None => render_branch_template(
-            &ctx.config.branch_template,
-            &run_id,
-            &task.prompt,
-            &current_user(),
-        ),
+        None => {
+            let rendered = render_branch_template(
+                &ctx.config.branch_template,
+                &run_id,
+                &task.prompt,
+                &current_user(),
+            );
+            avoid_git_ref_prefix_collision(&ctx.git, &rendered)
+        }
     };
 
     let lock_reason = format!("saisonnier:{} ({})", run_id, branch);
@@ -182,7 +186,7 @@ fn claim_and_prepare(
     let tmux_session = if inline {
         String::new()
     } else {
-        tmux::session_name(&ctx.repo_name, &cep.short_name)
+        tmux::run_session_name(&run_id)
     };
 
     let receipt = RunReceipt {
@@ -211,4 +215,28 @@ fn claim_and_prepare(
     ctx.store.remove_task(&task.task_id)?;
 
     Ok(receipt)
+}
+
+/// If a branch prefix `a/b` already exists as a local branch ref (`refs/heads/a/b`),
+/// Git cannot create `refs/heads/a/b/c`. Replace the colliding `/` after `a/b` with `-`.
+fn avoid_git_ref_prefix_collision(git: &git_core::GitRunner, candidate: &str) -> String {
+    let mut current = candidate.to_string();
+    loop {
+        let mut prefix_collision_idx = None;
+        for (idx, ch) in current.char_indices() {
+            if ch == '/' {
+                let prefix = &current[..idx];
+                if !prefix.is_empty() && git.branch_exists(prefix, None) {
+                    prefix_collision_idx = Some(idx);
+                    break;
+                }
+            }
+        }
+        match prefix_collision_idx {
+            Some(idx) => {
+                current.replace_range(idx..idx + 1, "-");
+            }
+            None => return current,
+        }
+    }
 }

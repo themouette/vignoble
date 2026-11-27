@@ -198,19 +198,22 @@ resume = "echo resumed {session_path} {session_id}"
 }
 
 #[test]
-fn test_zero_commit_run_preserves_cep_and_sets_speech_marker_after_exit() {
+fn test_zero_commit_run_auto_releases_cep_and_records_no_changes_receipt() {
     let env = TestEnv::setup(&["syrah"]);
 
-    // Simulate an agent whose session_shutdown hook clears the git marker right before exit.
+    // Create a local branch `themouette/saisonnier` to verify that a branch_template
+    // expanding to `themouette/saisonnier/{run_id}` rewrites the colliding `/` to `-`.
+    run_git(&env.repo_dir, &["branch", "themouette/saisonnier"]);
+
     env.write_config(
         r#"
 [saisonnier]
 default_profile = "thinker"
+branch_template = "themouette/saisonnier/{run_id}"
 
 [saisonnier.profiles.thinker]
 run = '''
 echo "Need clarification from user"
-git config --unset-all cep.state.syrah.marker || true
 exit 0
 '''
 resume = "echo resume {session_id}"
@@ -226,21 +229,19 @@ resume = "echo resume {session_id}"
     let receipts = env.store().list_receipts().unwrap();
     assert_eq!(receipts.len(), 1);
     let r = &receipts[0];
-    assert_eq!(r.status, RunStatus::NoChanges);
+    assert_eq!(r.status, RunStatus::Completed);
     assert_eq!(r.exit_code, Some(0));
     assert_eq!(r.end_sha.as_deref(), Some(r.start_sha.as_str()));
+    assert_eq!(r.branch, format!("themouette/saisonnier-{}", r.run_id));
 
     let worktrees = list_worktrees(&env.git()).unwrap();
     let syrah = worktrees.iter().find(|w| w.short_name == "syrah").unwrap();
     assert!(
-        syrah
-            .locked
-            .as_deref()
-            .unwrap_or("")
-            .starts_with(&format!("saisonnier:{}", r.run_id)),
-        "expected syrah to remain locked by run"
+        syrah.locked.is_none(),
+        "expected syrah to be auto-released after clean zero-commit run"
     );
-    assert_eq!(get_agent_marker(&env.git(), "syrah").as_deref(), Some("💬"));
+    assert_eq!(syrah.head, WorktreeHead::Detached);
+    assert_eq!(get_agent_marker(&env.git(), "syrah"), None);
 }
 
 #[test]
@@ -494,14 +495,14 @@ resume = "printf '%s|%s|%s\n' '{{cep}}' '{{branch}}' '{{session_id}}' > '{}'"
         marker_file.display(),
     ));
 
-    // Case 1: no_changes run keeps syrah claimed; resume reuses syrah directly.
+    // Case 1: zero-commit completed run auto-releases syrah; resume claims syrah and checks out its branch.
     env.cmd()
         .env("SAISONNIER_RUNNER", "inline")
         .args(["enqueue", "-b", "feat/needs-input", "Ask question"])
         .assert()
         .success();
     let noop_run = env.store().list_receipts().unwrap()[0].clone();
-    assert_eq!(noop_run.status, RunStatus::NoChanges);
+    assert_eq!(noop_run.status, RunStatus::Completed);
 
     env.cmd()
         .args(["resume", &noop_run.run_id])
@@ -672,45 +673,50 @@ run = 'echo "$SAISONNIER_PROMPT" > out.txt && git add out.txt && git commit -m "
     let edited_by_editor = env.store().find_task(&second_id).unwrap().unwrap();
     assert_eq!(edited_by_editor.prompt.trim(), "Edited by fake EDITOR");
 
-    // 3. Run tick: first task (noop) runs on syrah, finishes with no_changes (💬), holding syrah;
-    //    second task stays queued because syrah is held.
+    // 3. Run tick: first task (noop) runs on syrah, finishes with no_changes (💬), auto-releases syrah,
+    //    and immediately drains the second edited task!
     env.cmd()
         .env("SAISONNIER_RUNNER", "inline")
         .args(["tick"])
         .assert()
         .success();
 
+    assert!(env.store().list_tasks().unwrap().is_empty());
+
     let receipts = env.store().list_receipts().unwrap();
-    assert_eq!(receipts.len(), 1);
-    let noop_run_id = receipts[0].run_id.clone();
-    assert_eq!(receipts[0].status, RunStatus::NoChanges);
-    assert_eq!(get_agent_marker(&env.git(), "syrah").as_deref(), Some("💬"));
-    assert_eq!(env.store().list_tasks().unwrap().len(), 1);
+    assert_eq!(receipts.len(), 2);
+    let noop_run = receipts
+        .iter()
+        .find(|r| r.branch == "feat/noop")
+        .unwrap()
+        .clone();
+    assert_eq!(noop_run.status, RunStatus::Completed);
 
     // 4. `saisonnier logs` prints full log or last N lines.
     env.cmd()
-        .args(["logs", &noop_run_id])
+        .args(["logs", &noop_run.run_id])
         .assert()
         .success()
         .stdout(predicate::str::contains("line 1\nline 2\nline 3"));
 
     env.cmd()
-        .args(["logs", "-n", "1", &noop_run_id])
+        .args(["logs", "-n", "1", &noop_run.run_id])
         .assert()
         .success()
         .stdout(predicate::str::contains("line 1").not())
         .stdout(predicate::str::contains("line 3"));
 
-    // 5. `saisonnier clean <run-id>` removes the no_changes receipt, releases syrah + clears 💬,
-    //    and triggers tick so the second task runs and completes automatically!
+    // 5. `saisonnier clean <run-id>` removes the no_changes receipt while keeping the completed receipt.
     env.cmd()
-        .env("SAISONNIER_RUNNER", "inline")
-        .args(["clean", &noop_run_id])
+        .args(["clean", &noop_run.run_id])
         .assert()
         .success();
 
-    assert!(env.store().find_receipt(&noop_run_id).unwrap().is_none());
-    assert!(env.store().list_tasks().unwrap().is_empty());
+    assert!(env
+        .store()
+        .find_receipt(&noop_run.run_id)
+        .unwrap()
+        .is_none());
 
     let remaining_receipts = env.store().list_receipts().unwrap();
     assert_eq!(remaining_receipts.len(), 1);

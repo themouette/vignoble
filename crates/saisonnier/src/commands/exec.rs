@@ -143,12 +143,7 @@ pub fn execute_run(ctx: &ExecutionContext, run_id: &str, inline: bool) -> Result
     receipt.end_sha = end_sha.clone();
     receipt.summary = summary;
 
-    let has_new_commits = end_sha
-        .as_deref()
-        .map(|sha| sha != receipt.start_sha)
-        .unwrap_or(false);
-
-    if exit_code == 0 && !dirty && has_new_commits {
+    if exit_code == 0 && !dirty {
         receipt.status = RunStatus::Completed;
         ctx.store.write_receipt(&receipt)?;
 
@@ -163,12 +158,6 @@ pub fn execute_run(ctx: &ExecutionContext, run_id: &str, inline: bool) -> Result
                 inline,
             },
         )?;
-        Ok(())
-    } else if exit_code == 0 && !dirty {
-        receipt.status = RunStatus::NoChanges;
-        ctx.store.write_receipt(&receipt)?;
-        // Set marker after child exits so agent session_shutdown hooks cannot clear it.
-        set_agent_marker(&ctx.git, &receipt.cep, "💬")?;
         Ok(())
     } else if exit_code == 0 {
         receipt.status = RunStatus::Dirty;

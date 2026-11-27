@@ -4,7 +4,21 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 pub fn session_name(repo_name: &str, cep_name: &str) -> String {
-    format!("{}/{}", repo_name, cep_name)
+    sanitize_tmux_session_name(&format!("{}/{}", repo_name, cep_name))
+}
+
+pub fn run_session_name(run_id: &str) -> String {
+    sanitize_tmux_session_name(&format!("saisonnier-{}", run_id))
+}
+
+/// Replace `.` and `:` (which tmux parses as `session:window.pane` separators) with `_`.
+pub fn sanitize_tmux_session_name(raw: &str) -> String {
+    raw.chars()
+        .map(|c| match c {
+            '.' | ':' => '_',
+            other => other,
+        })
+        .collect()
 }
 
 pub fn is_tmux_available() -> bool {

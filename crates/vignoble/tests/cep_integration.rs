@@ -140,10 +140,16 @@ template = "{repo}/{name}"
 "#;
     fs::write(env.local_dir.join(".vignoble.toml"), custom_cfg).unwrap();
 
+    let second_name = if wt_name == "syrah" {
+        "merlot"
+    } else {
+        "syrah"
+    };
+
     env.cmd()
         .args([
             "create",
-            "syrah",
+            second_name,
             "-b",
             "feat/custom-branch",
             "-m",
@@ -157,7 +163,7 @@ template = "{repo}/{name}"
         .path()
         .join("custom-pool")
         .join("my-repo")
-        .join("syrah");
+        .join(second_name);
     assert!(expected_custom_path.is_dir());
 
     let branch_in_syrah = run_git(

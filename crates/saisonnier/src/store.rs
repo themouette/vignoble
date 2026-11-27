@@ -49,8 +49,7 @@ impl RunStatus {
     pub fn badge(self) -> &'static str {
         match self {
             Self::Running => "🤖",
-            Self::Completed => "✔",
-            Self::NoChanges => "💬",
+            Self::Completed | Self::NoChanges => "✔",
             Self::Dirty | Self::Crashed => "⚠️",
             Self::Failed | Self::Cancelled => "✖",
         }
@@ -59,8 +58,7 @@ impl RunStatus {
     pub fn color(self) -> &'static str {
         match self {
             Self::Running => "cyan",
-            Self::Completed => "green",
-            Self::NoChanges => "yellow",
+            Self::Completed | Self::NoChanges => "green",
             Self::Dirty | Self::Crashed => "orange",
             Self::Failed | Self::Cancelled => "red",
         }
