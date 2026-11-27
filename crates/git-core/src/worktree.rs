@@ -258,6 +258,18 @@ pub fn get_agent_marker(git: &GitRunner, worktree_name: &str) -> Option<String> 
         .filter(|v| !v.is_empty())
 }
 
+pub fn set_agent_marker(git: &GitRunner, worktree_name: &str, marker: &str) -> Result<()> {
+    let key = format!("cep.state.{}.marker", worktree_name);
+    git.git(&["config", &key, marker])?;
+    Ok(())
+}
+
+pub fn clear_agent_marker(git: &GitRunner, worktree_name: &str) -> Result<()> {
+    let key = format!("cep.state.{}.marker", worktree_name);
+    let _ = git.git(&["config", "--unset-all", &key]);
+    Ok(())
+}
+
 fn normalize_path(path: &Path) -> PathBuf {
     if let Ok(canon) = path.canonicalize() {
         return canon;

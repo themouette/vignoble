@@ -11,6 +11,7 @@ struct TestGitEnv {
     remote_dir: PathBuf,
     local_dir: PathBuf,
     worktrees_dir: PathBuf,
+    sarment_bin: PathBuf,
 }
 
 fn run_git(cwd: &Path, args: &[&str]) {
@@ -46,10 +47,19 @@ impl TestGitEnv {
         let remote_dir = tmp.path().join("remote.git");
         let local_dir = tmp.path().join("local");
         let worktrees_dir = tmp.path().join("worktrees");
+        let bin_dir = tmp.path().join("bin");
 
         fs::create_dir_all(&remote_dir).unwrap();
         fs::create_dir_all(&local_dir).unwrap();
         fs::create_dir_all(&worktrees_dir).unwrap();
+        fs::create_dir_all(&bin_dir).unwrap();
+
+        let vignoble_src = assert_cmd::cargo::cargo_bin!("vignoble");
+        let sarment_bin = bin_dir.join(format!("sarment{}", std::env::consts::EXE_SUFFIX));
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(vignoble_src, &sarment_bin).unwrap();
+        #[cfg(windows)]
+        fs::copy(vignoble_src, &sarment_bin).unwrap();
 
         run_git(&remote_dir, &["init", "--bare", "--initial-branch=main"]);
         run_git(&local_dir, &["init", "--initial-branch=main"]);
@@ -66,13 +76,13 @@ impl TestGitEnv {
             remote_dir,
             local_dir,
             worktrees_dir,
+            sarment_bin,
         }
     }
 
     fn cmd(&self) -> Command {
-        let mut cmd = Command::cargo_bin("sarment").unwrap();
+        let mut cmd = Command::new(&self.sarment_bin);
         cmd.current_dir(&self.local_dir);
-        // Isolate HOME so user's global config doesn't affect tests
         cmd.env("HOME", self._tmp.path());
         cmd
     }
@@ -82,7 +92,6 @@ impl TestGitEnv {
 fn test_all_and_list_with_default_stages_and_sync_status() {
     let env = TestGitEnv::setup();
 
-    // Create a branch merged into main and pushed to origin (UpToDate in prod)
     run_git(&env.local_dir, &["checkout", "-b", "feat/merged-in-main"]);
     commit_file(
         &env.local_dir,
@@ -107,19 +116,16 @@ fn test_all_and_list_with_default_stages_and_sync_status() {
     );
     run_git(&env.local_dir, &["push", "origin", "main"]);
 
-    // Create a branch in dev that needs push
     run_git(&env.local_dir, &["checkout", "-b", "feat/need-push"]);
     commit_file(&env.local_dir, "push.txt", "v1\n", "Push v1");
     run_git(&env.local_dir, &["push", "-u", "origin", "feat/need-push"]);
     commit_file(&env.local_dir, "push.txt", "v2\n", "Push v2");
 
-    // Create a local-only branch in dev (no upstream)
     run_git(&env.local_dir, &["checkout", "-b", "feat/local-only"]);
     commit_file(&env.local_dir, "local.txt", "local\n", "Local commit");
 
     run_git(&env.local_dir, &["checkout", "main"]);
 
-    // Verify `all` output shows Unmerged and In production (main)
     env.cmd()
         .arg("-u")
         .assert()
@@ -136,14 +142,12 @@ fn test_all_and_list_with_default_stages_and_sync_status() {
             "You have 2 branches in active development",
         ));
 
-    // Verify `list prod` aliases to `main` when `prod` branch does not exist
     env.cmd()
         .args(["-u", "list", "prod"])
         .assert()
         .success()
         .stdout("feat/merged-in-main\n");
 
-    // Verify `list dev` lists the unmerged branches
     env.cmd()
         .args(["-u", "list", "dev"])
         .assert()
@@ -156,7 +160,6 @@ fn test_all_and_list_with_default_stages_and_sync_status() {
 fn test_worktree_indicator_and_clean_protection() {
     let env = TestGitEnv::setup();
 
-    // Create two branches merged into main
     run_git(&env.local_dir, &["checkout", "-b", "feat/deletable"]);
     commit_file(&env.local_dir, "a.txt", "a\n", "Add a");
     run_git(&env.local_dir, &["checkout", "main"]);
@@ -174,7 +177,6 @@ fn test_worktree_indicator_and_clean_protection() {
     );
     run_git(&env.local_dir, &["push", "origin", "main"]);
 
-    // Check out `feat/in-worktree` in a secondary worktree (`pool-alpha`)
     let wt_path = env.worktrees_dir.join("pool-alpha");
     run_git(
         &env.local_dir,
@@ -186,7 +188,6 @@ fn test_worktree_indicator_and_clean_protection() {
         ],
     );
 
-    // Also create a detached HEAD worktree (`pool-unclaimed`) to ensure detached worktrees parse cleanly
     let wt_detached = env.worktrees_dir.join("pool-unclaimed");
     run_git(
         &env.local_dir,
@@ -199,14 +200,12 @@ fn test_worktree_indicator_and_clean_protection() {
         ],
     );
 
-    // 1. `all` shows `[wt: pool-alpha]` indicator for `feat/in-worktree`
     env.cmd()
         .arg("-u")
         .assert()
         .success()
         .stdout(predicate::str::contains("[wt: pool-alpha]"));
 
-    // 2. `clean prod -y` skips `feat/in-worktree` and deletes `feat/deletable`
     env.cmd()
         .args(["-u", "-y", "clean", "prod"])
         .assert()
@@ -215,7 +214,6 @@ fn test_worktree_indicator_and_clean_protection() {
         .stdout(predicate::str::contains("feat/deletable"))
         .stdout(predicate::str::contains("has been deleted"));
 
-    // Confirm `feat/in-worktree` still exists while `feat/deletable` is gone
     env.cmd()
         .args(["-u", "list", "prod"])
         .assert()
@@ -227,7 +225,6 @@ fn test_worktree_indicator_and_clean_protection() {
 fn test_custom_stages_with_branch_script_and_check_script() {
     let env = TestGitEnv::setup();
 
-    // Create `preprod` and dynamic `staging-42` on remote
     run_git(&env.local_dir, &["checkout", "-b", "preprod"]);
     commit_file(
         &env.local_dir,
@@ -240,7 +237,6 @@ fn test_custom_stages_with_branch_script_and_check_script() {
     run_git(&env.local_dir, &["checkout", "-b", "staging-42"]);
     run_git(&env.local_dir, &["push", "-u", "origin", "staging-42"]);
 
-    // Create a branch merged into `staging-42`
     run_git(&env.local_dir, &["checkout", "-b", "feat/in-staging"]);
     commit_file(&env.local_dir, "stg.txt", "stg\n", "Staging feature");
     run_git(&env.local_dir, &["checkout", "staging-42"]);
@@ -256,7 +252,6 @@ fn test_custom_stages_with_branch_script_and_check_script() {
     );
     run_git(&env.local_dir, &["push", "origin", "staging-42"]);
 
-    // Create a branch that matches `partial-staging` via `check_script`
     run_git(&env.local_dir, &["checkout", "preprod"]);
     run_git(&env.local_dir, &["checkout", "-b", "feat/partial-only"]);
     commit_file(&env.local_dir, "part.txt", "part\n", "Partial feature");
@@ -283,21 +278,18 @@ exit 1
 "#;
     fs::write(env.local_dir.join(".vignoble.toml"), cfg).unwrap();
 
-    // Verify `list staging` finds `feat/in-staging` via dynamic `branch_script`
     env.cmd()
         .args(["-u", "list", "staging"])
         .assert()
         .success()
         .stdout("feat/in-staging\n");
 
-    // Verify `list partial-staging` finds `feat/partial-only` via `check_script`
     env.cmd()
         .args(["-u", "list", "partial-staging"])
         .assert()
         .success()
         .stdout("feat/partial-only\n");
 
-    // Verify `all` prints the annotation `1/2 services` and `(staging-42)` reference
     env.cmd()
         .arg("-u")
         .assert()
@@ -365,7 +357,6 @@ fn test_squash_merge_detection_on_demand() {
         "Implement compute helper for feature",
     );
 
-    // Squash merge `feat/squashed-pr` onto `main`
     run_git(&env.local_dir, &["checkout", "main"]);
     run_git(&env.local_dir, &["merge", "--squash", "feat/squashed-pr"]);
     run_git(
@@ -378,14 +369,12 @@ fn test_squash_merge_detection_on_demand() {
     );
     run_git(&env.local_dir, &["push", "origin", "main"]);
 
-    // Without `--squash`, `feat/squashed-pr` is in `dev`
     env.cmd()
         .args(["-u", "list", "dev"])
         .assert()
         .success()
         .stdout("feat/squashed-pr\n");
 
-    // With `--squash`, `feat/squashed-pr` is detected in `prod` (`main`)
     env.cmd()
         .args(["-u", "--squash", "list", "prod"])
         .assert()

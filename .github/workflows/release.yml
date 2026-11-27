@@ -10,14 +10,10 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.bin }} (${{ matrix.target }})
+    name: Build vignoble (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        bin:
-          - vignoble
-          - sarment
-          - cep
         include:
           - os: macos-latest
             target: x86_64-apple-darwin
@@ -48,27 +44,27 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu
 
       - name: Build binary
-        run: cargo build --release --bin ${{ matrix.bin }} --target ${{ matrix.target }}
+        run: cargo build --release --bin vignoble --target ${{ matrix.target }}
 
       - name: Strip binary
         run: |
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
-            aarch64-linux-gnu-strip target/${{ matrix.target }}/release/${{ matrix.bin }} || true
+            aarch64-linux-gnu-strip target/${{ matrix.target }}/release/vignoble || true
           else
-            strip target/${{ matrix.target }}/release/${{ matrix.bin }} || true
+            strip target/${{ matrix.target }}/release/vignoble || true
           fi
 
       - name: Create tarball
         run: |
           cd target/${{ matrix.target }}/release
-          tar czf ${{ matrix.bin }}-${{ matrix.platform }}.tar.gz ${{ matrix.bin }}
-          mv ${{ matrix.bin }}-${{ matrix.platform }}.tar.gz ../../..
+          tar czf vignoble-${{ matrix.platform }}.tar.gz vignoble
+          mv vignoble-${{ matrix.platform }}.tar.gz ../../..
 
       - name: Upload artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: ${{ matrix.bin }}-${{ matrix.platform }}
-          path: ${{ matrix.bin }}-${{ matrix.platform }}.tar.gz
+          name: vignoble-${{ matrix.platform }}
+          path: vignoble-${{ matrix.platform }}.tar.gz
 
   release:
     name: Create Release

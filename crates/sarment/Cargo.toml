@@ -7,10 +7,6 @@ license.workspace = true
 repository.workspace = true
 description = "Check the status and stage progression of your git branches"
 
-[[bin]]
-name = "sarment"
-path = "src/main.rs"
-
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true

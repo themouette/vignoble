@@ -5,7 +5,6 @@ set -e
 # Usage: curl -fsSL https://raw.githubusercontent.com/themouette/vignoble/main/install.sh | bash
 
 REPO="themouette/vignoble"
-DEFAULT_TOOLS=("vignoble" "sarment" "cep")
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -35,7 +34,7 @@ vignoble installer
 
 USAGE:
     curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash
-    curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash -s -- [OPTIONS] [TOOLS...]
+    curl -fsSL https://raw.githubusercontent.com/${REPO}/main/install.sh | bash -s -- [OPTIONS]
 
 OPTIONS:
     --version <VERSION>        Version to install (default: latest)
@@ -47,12 +46,15 @@ OPTIONS:
     --global                   Install to /usr/local/bin (requires sudo)
                                Default is ~/.local/bin (no sudo required)
 
+    --shell-integration        Add shell integration (cep cd wrapper + completions)
+                               Adds 'eval "\$(vignoble shell-init --with-completion)"'
+                               to your shell configuration file
+
     --help                     Show this help message
 
-TOOLS:
-    Default installed tools: ${DEFAULT_TOOLS[*]}
-    For shell integration (e.g. cep worktree navigation), add to your shell config:
-      eval "\$(vignoble shell-init)"
+SUITE TOOLS:
+    Installs the 'vignoble' binary and runs 'vignoble postinstall' to link
+    the suite CLIs ('sarment' and 'cep') in the installation directory.
 
 EOF
   exit 0
@@ -106,31 +108,52 @@ check_path() {
   fi
 }
 
-install_tool() {
-  local tool="$1"
-  local version="$2"
-  local platform="$3"
-  local install_dir="$4"
-  local tmp_dir="$5"
+detect_shell_rc() {
+  local shell_name
+  shell_name=$(basename "${SHELL:-}")
 
-  local download_url="https://github.com/${REPO}/releases/download/${version}/${tool}-${platform}.tar.gz"
-  log_info "Downloading ${tool} (${version}) from ${download_url}"
+  case "$shell_name" in
+    bash)
+      echo "$HOME/.bashrc"
+      ;;
+    zsh)
+      echo "$HOME/.zshrc"
+      ;;
+    fish)
+      echo "$HOME/.config/fish/config.fish"
+      ;;
+    *)
+      echo ""
+      ;;
+  esac
+}
 
-  if ! curl -fsSL "$download_url" | tar -xz -C "$tmp_dir"; then
-    log_error "Failed to download ${tool} (${version})"
-    exit 1
+add_shell_init() {
+  local rc_file="$1"
+
+  if [ -z "$rc_file" ]; then
+    log_warning "Could not detect shell RC file"
+    echo ""
+    echo "To enable shell integration (cep cd + tab completion), add this to your shell configuration:"
+    echo '  eval "$(vignoble shell-init --with-completion)"'
+    return 1
   fi
 
-  log_info "Installing to ${install_dir}/${tool}"
-  if [ -w "$install_dir" ]; then
-    mv "$tmp_dir/$tool" "$install_dir/$tool"
-    chmod +x "$install_dir/$tool"
-  else
-    sudo mv "$tmp_dir/$tool" "$install_dir/$tool"
-    sudo chmod +x "$install_dir/$tool"
+  if [ -f "$rc_file" ] && grep -q "vignoble shell-init" "$rc_file" 2>/dev/null; then
+    log_info "Shell integration already configured in $rc_file"
+    return 0
   fi
 
-  log_success "${tool} installed!"
+  mkdir -p "$(dirname "$rc_file")" 2>/dev/null
+
+  {
+    echo ""
+    echo "# vignoble shell integration (cep cd + tab completion)"
+    echo 'eval "$(vignoble shell-init --with-completion)"'
+  } >> "$rc_file"
+
+  log_success "Shell integration added to $rc_file"
+  return 0
 }
 
 main() {
@@ -138,7 +161,7 @@ main() {
   platform=$(detect_platform)
   local version="latest"
   local install_dir="$HOME/.local/bin"
-  local tools=()
+  local shell_integration=false
 
   while [[ $# -gt 0 ]]; do
     case $1 in
@@ -154,23 +177,19 @@ main() {
         install_dir="/usr/local/bin"
         shift
         ;;
+      --shell-integration)
+        shell_integration=true
+        shift
+        ;;
       --help)
         show_help
         ;;
-      -*)
+      *)
         log_error "Unknown option: $1"
         exit 1
         ;;
-      *)
-        tools+=("$1")
-        shift
-        ;;
     esac
   done
-
-  if [ ${#tools[@]} -eq 0 ]; then
-    tools=("${DEFAULT_TOOLS[@]}")
-  fi
 
   for cmd in curl tar; do
     if ! command -v "$cmd" &> /dev/null; then
@@ -197,12 +216,36 @@ main() {
   tmp_dir=$(mktemp -d)
   trap 'rm -rf "$tmp_dir"' EXIT
 
-  for tool in "${tools[@]}"; do
-    install_tool "$tool" "$version" "$platform" "$install_dir" "$tmp_dir"
-  done
+  local download_url="https://github.com/${REPO}/releases/download/${version}/vignoble-${platform}.tar.gz"
+  log_info "Downloading vignoble (${version}) from ${download_url}"
 
-  log_info "For shell integration, add to your shell configuration file (~/.zshrc, ~/.bashrc):"
-  echo "  eval \"\$(vignoble shell-init)\""
+  if ! curl -fsSL "$download_url" | tar -xz -C "$tmp_dir"; then
+    log_error "Failed to download vignoble (${version})"
+    exit 1
+  fi
+
+  log_info "Installing to ${install_dir}/vignoble"
+  if [ -w "$install_dir" ]; then
+    mv "$tmp_dir/vignoble" "$install_dir/vignoble"
+    chmod +x "$install_dir/vignoble"
+    "$install_dir/vignoble" postinstall --yes
+  else
+    sudo mv "$tmp_dir/vignoble" "$install_dir/vignoble"
+    sudo chmod +x "$install_dir/vignoble"
+    sudo "$install_dir/vignoble" postinstall --yes
+  fi
+
+  log_success "vignoble suite installed!"
+
+  if [ "$shell_integration" = true ]; then
+    log_info "Installing shell integration..."
+    local rc_file
+    rc_file=$(detect_shell_rc)
+    add_shell_init "$rc_file" || true
+  else
+    log_info "For shell integration (cep cd + completions), add to your shell configuration file (~/.zshrc, ~/.bashrc):"
+    echo "  eval \"\$(vignoble shell-init --with-completion)\""
+  fi
 
   if ! check_path "$install_dir"; then
     log_warning "Installation directory ${install_dir} is not in your PATH"

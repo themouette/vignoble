@@ -3,7 +3,7 @@ use crate::{
     version::{self, REPO_NAME, REPO_OWNER},
 };
 use clap::Args;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[derive(Args, Debug, Clone)]
 pub struct UpdateArgs {
@@ -19,88 +19,21 @@ pub struct UpdateArgs {
     pub yes: bool,
 }
 
-pub fn execute(bin_name: &str, current_version: &str, args: &UpdateArgs) -> Result<()> {
+/// Check or update `bin_name` from GitHub releases.
+/// Returns `Ok(true)` when the binary on disk was updated to a new version.
+pub fn execute(bin_name: &str, current_version: &str, args: &UpdateArgs) -> Result<bool> {
     if args.check {
-        check_and_display(bin_name, current_version)
+        check_and_display(bin_name, current_version)?;
+        Ok(false)
     } else {
         let target_version = match resolve_target_version(current_version, args.version.as_deref())?
         {
             Some(v) => v,
-            None => return Ok(()),
+            None => return Ok(false),
         };
-        perform_update_binary(bin_name, None, current_version, &target_version, args.yes)
+        perform_update_binary(bin_name, None, current_version, &target_version, args.yes)?;
+        Ok(true)
     }
-}
-
-/// Update the primary binary (`tools[0]`) and any additional suite binaries from `tools[1..]`
-/// found in the current executable directory or `~/.local/bin`.
-pub fn execute_suite(tools: &[&str], current_version: &str, args: &UpdateArgs) -> Result<()> {
-    let Some(&primary_bin) = tools.first() else {
-        return Ok(());
-    };
-
-    if args.check {
-        return check_and_display(primary_bin, current_version);
-    }
-
-    let target_version = match resolve_target_version(current_version, args.version.as_deref())? {
-        Some(v) => v,
-        None => return Ok(()),
-    };
-
-    let exe_dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(Path::to_path_buf));
-    let fallback_dir = dirs::home_dir().map(|h| h.join(".local").join("bin"));
-    let targets = resolve_suite_targets(tools, exe_dir.as_deref(), fallback_dir.as_deref());
-
-    for (idx, (bin_name, install_path)) in targets.iter().enumerate() {
-        let skip_confirm = args.yes || idx > 0;
-        perform_update_binary(
-            bin_name,
-            install_path.as_deref(),
-            current_version,
-            &target_version,
-            skip_confirm,
-        )?;
-    }
-
-    Ok(())
-}
-
-/// Resolve suite binaries to update.
-///
-/// The first entry in `tools` is always included with `None` install path (representing the
-/// running executable). Remaining tools are included when found in `exe_dir` or `fallback_dir`.
-pub fn resolve_suite_targets(
-    tools: &[&str],
-    exe_dir: Option<&Path>,
-    fallback_dir: Option<&Path>,
-) -> Vec<(String, Option<PathBuf>)> {
-    let mut targets = Vec::new();
-    let Some((&primary, rest)) = tools.split_first() else {
-        return targets;
-    };
-
-    targets.push((primary.to_string(), None));
-
-    for &tool in rest {
-        let exe_name = format!("{}{}", tool, std::env::consts::EXE_SUFFIX);
-        let found = exe_dir
-            .map(|d| d.join(&exe_name))
-            .filter(|p| p.is_file())
-            .or_else(|| {
-                fallback_dir
-                    .map(|d| d.join(&exe_name))
-                    .filter(|p| p.is_file())
-            });
-
-        if let Some(path) = found {
-            targets.push((tool.to_string(), Some(path)));
-        }
-    }
-
-    targets
 }
 
 fn check_and_display(bin_name: &str, current_version: &str) -> Result<()> {
@@ -216,50 +149,16 @@ pub fn get_latest_version() -> Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use tempfile::tempdir;
 
     #[test]
-    fn test_resolve_suite_targets_includes_primary_and_installed_siblings() {
-        let tmp = tempdir().unwrap();
-        let exe_dir = tmp.path().join("bin");
-        fs::create_dir_all(&exe_dir).unwrap();
-
-        let sarment_path = exe_dir.join(format!("sarment{}", std::env::consts::EXE_SUFFIX));
-        fs::write(&sarment_path, b"binary").unwrap();
-
-        let targets = resolve_suite_targets(&["vignoble", "sarment", "cep"], Some(&exe_dir), None);
-        assert_eq!(
-            targets,
-            vec![
-                ("vignoble".to_string(), None),
-                ("sarment".to_string(), Some(sarment_path)),
-            ]
-        );
-    }
-
-    #[test]
-    fn test_resolve_suite_targets_uses_fallback_dir() {
-        let tmp = tempdir().unwrap();
-        let exe_dir = tmp.path().join("exe");
-        let fallback_dir = tmp.path().join("fallback");
-        fs::create_dir_all(&exe_dir).unwrap();
-        fs::create_dir_all(&fallback_dir).unwrap();
-
-        let cep_path = fallback_dir.join(format!("cep{}", std::env::consts::EXE_SUFFIX));
-        fs::write(&cep_path, b"binary").unwrap();
-
-        let targets = resolve_suite_targets(
-            &["vignoble", "sarment", "cep"],
-            Some(&exe_dir),
-            Some(&fallback_dir),
-        );
-        assert_eq!(
-            targets,
-            vec![
-                ("vignoble".to_string(), None),
-                ("cep".to_string(), Some(cep_path)),
-            ]
-        );
+    fn test_update_args_fields() {
+        let args = UpdateArgs {
+            version: Some("v0.2.0".to_string()),
+            check: false,
+            yes: true,
+        };
+        assert_eq!(args.version.as_deref(), Some("v0.2.0"));
+        assert!(!args.check);
+        assert!(args.yes);
     }
 }

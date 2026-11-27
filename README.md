@@ -2,7 +2,7 @@
 
 A fast, Git-native workflow suite for managing long-living worktree pools (**`cep`**) and branch stage progression (**`sarment`**).
 
-- **`vignoble`**: Suite manager (`update`, `shell-init`)
+- **`vignoble`**: Suite manager (`update`, `postinstall`, `shell-init`, `plugin`) and single multicall binary for the suite
 - **`cep`**: Long-living, reusable worktrees named after French grape varieties (*cépages*) with claim/release exclusivity
 - **`sarment`**: Branch sync status and stage waterfall (`dev` → `staging` → `preprod` → `prod`) with safe cleanup
 
@@ -12,10 +12,10 @@ A fast, Git-native workflow suite for managing long-living worktree pools (**`ce
 curl -fsSL https://raw.githubusercontent.com/themouette/vignoble/main/install.sh | bash
 ```
 
-Enable `cep cd` navigation in your shell (`~/.zshrc` or `~/.bashrc`):
+Enable `cep cd` navigation and tab completions in your shell (`~/.zshrc` or `~/.bashrc`):
 
 ```bash
-eval "$(vignoble shell-init)"
+eval "$(vignoble shell-init --with-completion)"
 ```
 
 ## Quick Start
@@ -42,10 +42,13 @@ sarment ls prod               # List branch names in a stage
 sarment clean prod            # Delete branches merged in prod (skips branches checked out in any cep)
 ```
 
-### `vignoble` — Updates
+### `vignoble` — Suite & Agent Plugin Management
 
 ```bash
-vignoble update               # Self-update vignoble, cep, and sarment
+vignoble update               # Self-update vignoble, refresh suite links, and upgrade installed plugins
+vignoble postinstall          # Ensure cep and sarment links exist next to vignoble
+vignoble plugin install       # Install vignoble skill and activity hooks for Pi and Claude Code
+vignoble plugin status        # Check installed agent plugin status
 ```
 
 ## Configuration

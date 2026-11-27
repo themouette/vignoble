@@ -7,10 +7,6 @@ license.workspace = true
 repository.workspace = true
 description = "Manage a pool of long-living, reusable git worktrees"
 
-[[bin]]
-name = "cep"
-path = "src/main.rs"
-
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
