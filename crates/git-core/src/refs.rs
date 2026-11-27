@@ -256,7 +256,7 @@ fn collect_local_branches_status(
 /// Resolve the upstream ref for a branch name (`<remote>/<branch>` if it exists, or `<branch>`).
 pub fn guess_upstream(git: &GitRunner, branch: &str, remote: &str) -> Option<String> {
     if let Ok(full) = git.git(&["rev-parse", "--symbolic-full-name", branch]) {
-        if full.starts_with(&format!("refs/remotes/{}", remote)) {
+        if full.starts_with("refs/remotes/") {
             return Some(branch.to_string());
         }
     }
@@ -481,5 +481,11 @@ mod tests {
             SyncStatus::RemoteBranch
         );
         assert!(!remote_only.contains_key("origin/HEAD"));
+
+        // Secondary remote ref resolves directly even when default remote is `origin`.
+        assert_eq!(
+            guess_upstream(&git, "upstream/main", "origin").as_deref(),
+            Some("upstream/main")
+        );
     }
 }

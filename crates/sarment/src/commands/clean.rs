@@ -1,17 +1,20 @@
 use crate::{commands::ExecutionContext, printer::pretty_print_block};
 use anyhow::Result;
 use cli_core::ui::{color_str, prompt_yes_no, GREEN_TICK_SYMBOL, RED_CROSS_SYMBOL};
-use git_core::{StageBranchEntry, SyncStatus};
+use git_core::{split_remote_branch, StageBranchEntry, SyncStatus};
 use std::collections::HashSet;
 
 pub fn execute(ctx: &ExecutionContext, target_stage: &str) -> Result<()> {
     let stage = ctx.require_stage(target_stage)?;
+    let known_remotes = ctx.git.remotes().unwrap_or_default();
 
-    let reference_branches: HashSet<&str> = ctx
-        .stages
-        .iter()
-        .filter_map(|s| s.reference.as_deref())
-        .collect();
+    let mut reference_branches: HashSet<String> = HashSet::new();
+    for reference in ctx.stages.iter().filter_map(|s| s.reference.as_deref()) {
+        reference_branches.insert(reference.to_string());
+        if let Some((_, short_branch)) = split_remote_branch(reference, &known_remotes) {
+            reference_branches.insert(short_branch.to_string());
+        }
+    }
 
     let current_branch = ctx.git.current_branch().unwrap_or(None);
 

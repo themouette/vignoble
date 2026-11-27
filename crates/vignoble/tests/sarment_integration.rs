@@ -435,3 +435,158 @@ exit 1
         .success()
         .stdout(predicate::str::contains("from-repos-drop-in"));
 }
+
+#[test]
+fn test_multi_remote_stage_branches_fetch_and_protect_local_reference_branches() {
+    let env = TestGitEnv::setup();
+
+    let deploy_dir = env._tmp.path().join("deploy.git");
+    fs::create_dir_all(&deploy_dir).unwrap();
+    run_git(&deploy_dir, &["init", "--bare", "--initial-branch=prod"]);
+    run_git(
+        &env.local_dir,
+        &["remote", "add", "deploy", deploy_dir.to_str().unwrap()],
+    );
+
+    // Feature 1: deployed to `deploy/prod`.
+    run_git(&env.local_dir, &["checkout", "-b", "feat/in-prod"]);
+    commit_file(&env.local_dir, "prod.txt", "prod\n", "Prod feature");
+    run_git(&env.local_dir, &["checkout", "main"]);
+    run_git(
+        &env.local_dir,
+        &["merge", "--no-ff", "feat/in-prod", "-m", "Merge prod feat"],
+    );
+    run_git(&env.local_dir, &["push", "origin", "main"]);
+    run_git(&env.local_dir, &["push", "deploy", "main:refs/heads/prod"]);
+
+    // Keep local `main` at the `deploy/prod` commit while `deploy/preprod` and `origin/main`
+    // advance further, so local `main` would be claimed by `prod` if not registered as a reference.
+    let prod_main_sha = StdCommand::new("git")
+        .args(["rev-parse", "main"])
+        .current_dir(&env.local_dir)
+        .output()
+        .unwrap();
+    let prod_main_sha = String::from_utf8(prod_main_sha.stdout)
+        .unwrap()
+        .trim()
+        .to_string();
+
+    // Feature 2: deployed to `deploy/preprod`.
+    run_git(&env.local_dir, &["checkout", "-b", "feat/in-preprod"]);
+    commit_file(
+        &env.local_dir,
+        "preprod.txt",
+        "preprod\n",
+        "Preprod feature",
+    );
+    run_git(&env.local_dir, &["checkout", "main"]);
+    run_git(
+        &env.local_dir,
+        &[
+            "merge",
+            "--no-ff",
+            "feat/in-preprod",
+            "-m",
+            "Merge preprod feat",
+        ],
+    );
+    run_git(&env.local_dir, &["push", "origin", "main"]);
+    run_git(
+        &env.local_dir,
+        &["push", "deploy", "main:refs/heads/preprod"],
+    );
+
+    // Feature 3: merged in `origin/main` only.
+    run_git(&env.local_dir, &["checkout", "-b", "feat/in-merged"]);
+    commit_file(&env.local_dir, "merged.txt", "merged\n", "Merged feature");
+    run_git(&env.local_dir, &["checkout", "main"]);
+    run_git(
+        &env.local_dir,
+        &[
+            "merge",
+            "--no-ff",
+            "feat/in-merged",
+            "-m",
+            "Merge merged feat",
+        ],
+    );
+    run_git(&env.local_dir, &["push", "origin", "main"]);
+
+    // Reset local `main` back to the `deploy/prod` commit and switch to an unmerged branch.
+    run_git(&env.local_dir, &["reset", "--hard", &prod_main_sha]);
+    run_git(&env.local_dir, &["checkout", "-b", "feat/unmerged"]);
+    commit_file(&env.local_dir, "wip.txt", "wip\n", "Unmerged feature");
+
+    // Delete local remote-tracking refs for `deploy` so `sarment` must fetch them on startup.
+    run_git(
+        &env.local_dir,
+        &["update-ref", "-d", "refs/remotes/deploy/prod"],
+    );
+    run_git(
+        &env.local_dir,
+        &["update-ref", "-d", "refs/remotes/deploy/preprod"],
+    );
+
+    let cfg = r#"
+[sarment]
+remote = "origin"
+stages = ["prod", "preprod", "merged"]
+
+[sarment.stage.prod]
+branch = "deploy/prod"
+
+[sarment.stage.preprod]
+branch = "deploy/preprod"
+
+[sarment.stage.merged]
+branch = "origin/main"
+label = "Merged"
+"#;
+    fs::write(env.local_dir.join(".vignoble.toml"), cfg).unwrap();
+
+    // Run without `-u` to verify `sarment` fetches both `origin` and `deploy (prod, preprod)`.
+    env.cmd()
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Fetching from origin..."))
+        .stdout(predicate::str::contains(
+            "Fetching from deploy (prod, preprod)...",
+        ))
+        .stdout(predicate::str::contains("Merged (origin/main)"))
+        .stdout(predicate::str::contains(
+            "In pre-production (deploy/preprod)",
+        ))
+        .stdout(predicate::str::contains("In production (deploy/prod)"));
+
+    env.cmd()
+        .args(["-u", "list", "prod"])
+        .assert()
+        .success()
+        .stdout("feat/in-prod\n");
+
+    env.cmd()
+        .args(["-u", "list", "preprod"])
+        .assert()
+        .success()
+        .stdout("feat/in-preprod\n");
+
+    env.cmd()
+        .args(["-u", "list", "merged"])
+        .assert()
+        .success()
+        .stdout("feat/in-merged\n");
+
+    env.cmd()
+        .args(["-u", "list", "dev"])
+        .assert()
+        .success()
+        .stdout("feat/unmerged\n");
+
+    // Cleaning `prod` deletes `feat/in-prod` while leaving local `main` untouched.
+    env.cmd()
+        .args(["-u", "-y", "clean", "prod"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("feat/in-prod"))
+        .stdout(predicate::str::contains("main").not());
+}

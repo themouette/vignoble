@@ -7,9 +7,10 @@ use anyhow::{anyhow, Result};
 use cli_core::ui::color_str;
 use git_core::{
     refs::collect_branches_status,
+    split_remote_branch,
     stages::{find_stage, resolve_waterfall_stages, ResolvedStage},
     worktree::map_worktrees_by_branch,
-    BranchInfo, GitRunner, WorktreeInfo,
+    BranchInfo, GitRunner, StageMode, WorktreeInfo,
 };
 use std::collections::HashMap;
 
@@ -37,12 +38,40 @@ impl ExecutionContext {
     ) -> Result<Self> {
         let remote = config.remote.clone();
         let squash = squash_override || config.squash;
+        let definitions = config.to_stage_definitions();
 
         if !no_update {
             git.fetch(&remote)?;
+            let known_remotes = git.remotes().unwrap_or_default();
+            let mut secondary_fetches: Vec<(String, Vec<String>)> = Vec::new();
+            for def in &definitions {
+                if let StageMode::Branch(branch_spec) = &def.mode {
+                    if let Some((stage_remote, short_branch)) =
+                        split_remote_branch(branch_spec, &known_remotes)
+                    {
+                        if stage_remote != remote {
+                            if let Some((_, branches)) = secondary_fetches
+                                .iter_mut()
+                                .find(|(r, _)| r == stage_remote)
+                            {
+                                if !branches.iter().any(|b| b == short_branch) {
+                                    branches.push(short_branch.to_string());
+                                }
+                            } else {
+                                secondary_fetches.push((
+                                    stage_remote.to_string(),
+                                    vec![short_branch.to_string()],
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            for (stage_remote, branches) in &secondary_fetches {
+                git.fetch_branches(stage_remote, branches)?;
+            }
         }
 
-        let definitions = config.to_stage_definitions();
         let stages =
             resolve_waterfall_stages(&git, &remote, pattern.as_deref(), squash, &definitions)?;
         let branches_info = collect_branches_status(&git, &remote, pattern.as_deref())?;
