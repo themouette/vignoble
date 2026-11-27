@@ -193,7 +193,7 @@ dependencies = [
 
 [[package]]
 name = "cep"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -283,7 +283,7 @@ checksum = "e0921b3876b3a1df8a1c9f912e7f94342458022c2e84288015893d83c4d62a79"
 
 [[package]]
 name = "cli-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "console 0.15.11",
@@ -777,7 +777,7 @@ dependencies = [
 
 [[package]]
 name = "git-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "strsim",
  "tempfile",
@@ -1662,7 +1662,7 @@ dependencies = [
 
 [[package]]
 name = "sarment"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2335,7 +2335,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vignoble"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "assert_cmd",
