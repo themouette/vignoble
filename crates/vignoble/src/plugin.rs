@@ -1,11 +1,39 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Subcommand, ValueEnum};
 use cli_core::ui::{color_str, GREEN_TICK_SYMBOL, RED_CROSS_SYMBOL};
+use dialoguer::{console::Term, theme::ColorfulTheme, MultiSelect};
 use serde_json::{json, Value};
 use std::{
     env, fs,
+    io::IsTerminal,
     path::{Path, PathBuf},
 };
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum AgentSlug {
+    Claude,
+    Pi,
+}
+
+impl AgentSlug {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Claude => "claude",
+            Self::Pi => "pi",
+        }
+    }
+
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Self::Claude => "Claude Code",
+            Self::Pi => "Pi",
+        }
+    }
+
+    pub fn all() -> &'static [AgentSlug] {
+        &[Self::Claude, Self::Pi]
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum AgentTarget {
@@ -16,22 +44,131 @@ pub enum AgentTarget {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum PluginCommand {
-    /// Install vignoble skill and activity hooks for coding agents
+    /// Install vignoble skill and activity hooks for coding agents (interactive picker when omitted)
     Install {
+        /// Agent names: claude, pi, or all (omit for interactive picker)
+        agents: Vec<String>,
+
         /// Target coding agent
-        #[arg(long, value_enum, default_value_t = AgentTarget::All)]
-        agent: AgentTarget,
+        #[arg(long, value_enum)]
+        agent: Option<AgentTarget>,
     },
     /// Upgrade already-installed agent plugins and skills to match the current version
     Upgrade,
-    /// Remove vignoble skill and activity hooks from coding agents
+    /// Remove vignoble skill and activity hooks from coding agents (interactive picker when omitted)
     Uninstall {
+        /// Agent names: claude, pi, or all (omit for interactive picker)
+        agents: Vec<String>,
+
         /// Target coding agent
-        #[arg(long, value_enum, default_value_t = AgentTarget::All)]
-        agent: AgentTarget,
+        #[arg(long, value_enum)]
+        agent: Option<AgentTarget>,
     },
     /// Show installation status for each supported coding agent
     Status,
+}
+
+pub fn parse_agent_args(
+    agents: &[String],
+    flag_agent: Option<AgentTarget>,
+) -> Result<Vec<AgentSlug>> {
+    let mut resolved = Vec::new();
+    let mut push_unique = |slug: AgentSlug| {
+        if !resolved.contains(&slug) {
+            resolved.push(slug);
+        }
+    };
+
+    if let Some(target) = flag_agent {
+        match target {
+            AgentTarget::Claude => push_unique(AgentSlug::Claude),
+            AgentTarget::Pi => push_unique(AgentSlug::Pi),
+            AgentTarget::All => {
+                for &s in AgentSlug::all() {
+                    push_unique(s);
+                }
+            }
+        }
+    }
+
+    for arg in agents {
+        match arg.to_lowercase().as_str() {
+            "claude" => push_unique(AgentSlug::Claude),
+            "pi" => push_unique(AgentSlug::Pi),
+            "all" => {
+                for &s in AgentSlug::all() {
+                    push_unique(s);
+                }
+            }
+            other => bail!("Unknown agent '{}'. Valid agents: claude, pi, all", other),
+        }
+    }
+
+    Ok(resolved)
+}
+
+fn resolve_agents_or_pick(
+    agents: &[String],
+    flag_agent: Option<AgentTarget>,
+    paths: &PluginPaths,
+    prompt: &str,
+    subcommand_usage: &str,
+) -> Result<Vec<AgentSlug>> {
+    let parsed = parse_agent_args(agents, flag_agent)?;
+    if !parsed.is_empty() {
+        return Ok(parsed);
+    }
+
+    if !std::io::stdin().is_terminal() {
+        bail!(
+            "No agents specified. Run interactively or pass agent names: {}",
+            subcommand_usage
+        );
+    }
+
+    show_agent_picker(paths, prompt)
+}
+
+fn show_agent_picker(paths: &PluginPaths, prompt: &str) -> Result<Vec<AgentSlug>> {
+    let all = AgentSlug::all();
+
+    let items: Vec<String> = all
+        .iter()
+        .map(|&slug| {
+            let installed = match slug {
+                AgentSlug::Claude => is_claude_installed(paths),
+                AgentSlug::Pi => is_pi_installed(paths),
+            };
+            if installed {
+                format!("{} (installed)", slug.display_name())
+            } else {
+                slug.display_name().to_string()
+            }
+        })
+        .collect();
+
+    let defaults: Vec<bool> = all
+        .iter()
+        .map(|&slug| match slug {
+            AgentSlug::Claude => is_claude_installed(paths),
+            AgentSlug::Pi => is_pi_installed(paths),
+        })
+        .collect();
+
+    let selections = MultiSelect::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt)
+        .items(&items)
+        .defaults(&defaults)
+        .interact_on_opt(&Term::stderr())
+        .context("Failed to display agent selection menu")?;
+
+    match selections {
+        Some(idxs) if !idxs.is_empty() => Ok(idxs.into_iter().map(|i| all[i]).collect()),
+        _ => {
+            eprintln!("No agents selected.");
+            Ok(Vec::new())
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -238,22 +375,33 @@ pub fn execute(cmd: &PluginCommand, version: &str) -> Result<()> {
 
 pub fn execute_with_paths(cmd: &PluginCommand, paths: &PluginPaths, version: &str) -> Result<()> {
     match cmd {
-        PluginCommand::Install { agent } => {
-            if matches!(agent, AgentTarget::Pi | AgentTarget::All) {
-                install_pi(paths, version)?;
-                println!(
-                    "{}Installed vignoble plugin for Pi ({})",
-                    color_str(GREEN_TICK_SYMBOL, "green"),
-                    paths.pi_agent_dir.display()
-                );
-            }
-            if matches!(agent, AgentTarget::Claude | AgentTarget::All) {
-                install_claude(paths, version)?;
-                println!(
-                    "{}Installed vignoble plugin for Claude Code ({})",
-                    color_str(GREEN_TICK_SYMBOL, "green"),
-                    paths.claude_plugin_dir.display()
-                );
+        PluginCommand::Install { agents, agent } => {
+            let selected = resolve_agents_or_pick(
+                agents,
+                *agent,
+                paths,
+                "Select agents to install (Space to toggle, Enter to confirm)",
+                "vignoble plugin install claude pi",
+            )?;
+            for slug in selected {
+                match slug {
+                    AgentSlug::Pi => {
+                        install_pi(paths, version)?;
+                        println!(
+                            "{}Installed vignoble plugin for Pi ({})",
+                            color_str(GREEN_TICK_SYMBOL, "green"),
+                            paths.pi_agent_dir.display()
+                        );
+                    }
+                    AgentSlug::Claude => {
+                        install_claude(paths, version)?;
+                        println!(
+                            "{}Installed vignoble plugin for Claude Code ({})",
+                            color_str(GREEN_TICK_SYMBOL, "green"),
+                            paths.claude_plugin_dir.display()
+                        );
+                    }
+                }
             }
             Ok(())
         }
@@ -273,20 +421,31 @@ pub fn execute_with_paths(cmd: &PluginCommand, paths: &PluginPaths, version: &st
             }
             Ok(())
         }
-        PluginCommand::Uninstall { agent } => {
-            if matches!(agent, AgentTarget::Pi | AgentTarget::All) {
-                uninstall_pi(paths)?;
-                println!(
-                    "{}Removed vignoble plugin from Pi",
-                    color_str(GREEN_TICK_SYMBOL, "green")
-                );
-            }
-            if matches!(agent, AgentTarget::Claude | AgentTarget::All) {
-                uninstall_claude(paths)?;
-                println!(
-                    "{}Removed vignoble plugin from Claude Code",
-                    color_str(GREEN_TICK_SYMBOL, "green")
-                );
+        PluginCommand::Uninstall { agents, agent } => {
+            let selected = resolve_agents_or_pick(
+                agents,
+                *agent,
+                paths,
+                "Select agents to uninstall (Space to toggle, Enter to confirm)",
+                "vignoble plugin uninstall claude pi",
+            )?;
+            for slug in selected {
+                match slug {
+                    AgentSlug::Pi => {
+                        uninstall_pi(paths)?;
+                        println!(
+                            "{}Removed vignoble plugin from Pi",
+                            color_str(GREEN_TICK_SYMBOL, "green")
+                        );
+                    }
+                    AgentSlug::Claude => {
+                        uninstall_claude(paths)?;
+                        println!(
+                            "{}Removed vignoble plugin from Claude Code",
+                            color_str(GREEN_TICK_SYMBOL, "green")
+                        );
+                    }
+                }
             }
             Ok(())
         }
@@ -531,7 +690,8 @@ mod tests {
 
         execute_with_paths(
             &PluginCommand::Install {
-                agent: AgentTarget::All,
+                agents: vec!["claude".to_string(), "pi".to_string()],
+                agent: None,
             },
             &paths,
             "0.1.0",
@@ -568,7 +728,8 @@ mod tests {
         // Uninstall all
         execute_with_paths(
             &PluginCommand::Uninstall {
-                agent: AgentTarget::All,
+                agents: vec!["all".to_string()],
+                agent: None,
             },
             &paths,
             "0.2.0",
@@ -587,5 +748,22 @@ mod tests {
         assert!(settings_after["enabledPlugins"]
             .get("vignoble@vignoble-local")
             .is_none());
+    }
+
+    #[test]
+    fn test_parse_agent_args_validates_and_deduplicates() {
+        assert_eq!(
+            parse_agent_args(&["pi".to_string()], None).unwrap(),
+            vec![AgentSlug::Pi]
+        );
+        assert_eq!(
+            parse_agent_args(&["claude".to_string(), "PI".to_string()], None).unwrap(),
+            vec![AgentSlug::Claude, AgentSlug::Pi]
+        );
+        assert_eq!(
+            parse_agent_args(&["all".to_string()], None).unwrap(),
+            vec![AgentSlug::Claude, AgentSlug::Pi]
+        );
+        assert!(parse_agent_args(&["unknown".to_string()], None).is_err());
     }
 }

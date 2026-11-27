@@ -18,6 +18,7 @@ clap.workspace = true
 clap_complete.workspace = true
 cli-core = { path = "../cli-core" }
 console.workspace = true
+dialoguer.workspace = true
 dirs.workspace = true
 git-core = { path = "../git-core" }
 sarment = { path = "../sarment" }
