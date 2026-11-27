@@ -6,8 +6,8 @@ use cli_core::ui::{
 };
 use console::{measure_text_width, pad_str, Alignment};
 use git_core::{
-    refs::collect_branches_status,
-    worktree::{get_agent_marker, list_worktrees},
+    refs::collect_branches_status_for,
+    worktree::{list_agent_markers, list_worktrees},
     SyncStatus, WorktreeHead,
 };
 
@@ -21,7 +21,11 @@ struct Row {
 
 pub fn execute(ctx: &ExecutionContext) -> Result<()> {
     let worktrees = list_worktrees(&ctx.git)?;
-    let branches_info = collect_branches_status(&ctx.git, "origin", None).unwrap_or_default();
+    let checked_out_branches: Vec<&str> =
+        worktrees.iter().filter_map(|wt| wt.branch_name()).collect();
+    let branches_info =
+        collect_branches_status_for(&ctx.git, "origin", &checked_out_branches).unwrap_or_default();
+    let agent_markers = list_agent_markers(&ctx.git);
 
     let mut rows = Vec::with_capacity(worktrees.len());
     for wt in &worktrees {
@@ -68,7 +72,7 @@ pub fn execute(ctx: &ExecutionContext) -> Result<()> {
             color_str("available", "green")
         };
 
-        if let Some(marker) = get_agent_marker(&ctx.git, &wt.short_name) {
+        if let Some(marker) = agent_markers.get(&wt.short_name) {
             claim = format!("{} {}", claim, marker);
         }
 

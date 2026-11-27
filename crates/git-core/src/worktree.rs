@@ -273,6 +273,43 @@ pub fn get_agent_marker(git: &GitRunner, worktree_name: &str) -> Option<String> 
         .filter(|v| !v.is_empty())
 }
 
+pub fn list_agent_markers(git: &GitRunner) -> HashMap<String, String> {
+    let Ok(out) = git.git(&[
+        "config",
+        "--null",
+        "--get-regexp",
+        r"^cep\.state\..+\.marker$",
+    ]) else {
+        return HashMap::new();
+    };
+    parse_agent_markers(&out)
+}
+
+fn parse_agent_markers(output: &str) -> HashMap<String, String> {
+    let mut markers = HashMap::new();
+    for record in output.split('\0') {
+        let Some((key, value)) = record.split_once('\n') else {
+            continue;
+        };
+        let Some(rest) = key.strip_prefix("cep.state.") else {
+            continue;
+        };
+        let Some(worktree_name) = rest.strip_suffix(".marker") else {
+            continue;
+        };
+        if worktree_name.is_empty() {
+            continue;
+        }
+        let value = value.trim();
+        if value.is_empty() {
+            markers.remove(worktree_name);
+        } else {
+            markers.insert(worktree_name.to_string(), value.to_string());
+        }
+    }
+    markers
+}
+
 pub fn set_agent_marker(git: &GitRunner, worktree_name: &str, marker: &str) -> Result<()> {
     let key = format!("cep.state.{}.marker", worktree_name);
     git.git(&["config", &key, marker])?;
@@ -427,5 +464,42 @@ detached
         let by_path =
             resolve_worktree_target(&git, &worktrees, "/Users/dev/worktrees/merlot").unwrap();
         assert_eq!(by_path.short_name, "merlot");
+    }
+
+    #[test]
+    fn test_parse_agent_markers_handles_spaces_overrides_and_empty_values() {
+        let raw = concat!(
+            "cep.state.syrah.marker\n🤖\0",
+            "cep.state.my repo.marker\n🧪\0",
+            "cep.state.syrah.marker\n⚡\0",
+            "cep.state.merlot.marker\n🤖\0",
+            "cep.state.merlot.marker\n\0",
+        );
+        let markers = parse_agent_markers(raw);
+        assert_eq!(markers.len(), 2);
+        assert_eq!(markers.get("syrah").map(String::as_str), Some("⚡"));
+        assert_eq!(markers.get("my repo").map(String::as_str), Some("🧪"));
+        assert!(!markers.contains_key("merlot"));
+    }
+
+    #[test]
+    fn test_list_agent_markers_reads_git_config() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let git = GitRunner::new(tmp.path(), false);
+        git.git(&["init", "-b", "main"]).unwrap();
+
+        assert!(list_agent_markers(&git).is_empty());
+
+        set_agent_marker(&git, "syrah", "🤖").unwrap();
+        set_agent_marker(&git, "my repo", "🧪").unwrap();
+        let markers = list_agent_markers(&git);
+        assert_eq!(markers.len(), 2);
+        assert_eq!(markers.get("syrah").map(String::as_str), Some("🤖"));
+        assert_eq!(markers.get("my repo").map(String::as_str), Some("🧪"));
+
+        clear_agent_marker(&git, "syrah").unwrap();
+        let markers = list_agent_markers(&git);
+        assert_eq!(markers.len(), 1);
+        assert_eq!(markers.get("my repo").map(String::as_str), Some("🧪"));
     }
 }
