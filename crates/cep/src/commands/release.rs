@@ -1,10 +1,10 @@
-use crate::commands::ExecutionContext;
+use crate::commands::{ensure_not_managed_saisonnier, ExecutionContext};
 use anyhow::{anyhow, bail, Result};
 use clap::Args;
 use cli_core::ui::{color_str, GREEN_TICK_SYMBOL};
 use git_core::worktree::{
-    detach_worktree_head, is_worktree_dirty, list_worktrees, resolve_worktree_target,
-    unlock_worktree,
+    clear_agent_marker, detach_worktree_head, is_worktree_dirty, list_worktrees,
+    resolve_worktree_target, unlock_worktree,
 };
 
 #[derive(Args, Debug, Clone)]
@@ -22,6 +22,7 @@ pub struct ReleaseArgs {
 }
 
 pub fn execute(ctx: &ExecutionContext, args: &ReleaseArgs) -> Result<()> {
+    ensure_not_managed_saisonnier("release")?;
     let worktrees = list_worktrees(&ctx.git)?;
 
     let wt = match &args.target {
@@ -52,6 +53,8 @@ pub fn execute(ctx: &ExecutionContext, args: &ReleaseArgs) -> Result<()> {
     if wt.locked.is_some() {
         unlock_worktree(&ctx.git, &wt.path)?;
     }
+
+    let _ = clear_agent_marker(&ctx.git, &wt.short_name);
 
     println!(
         "{}Released worktree {}",

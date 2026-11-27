@@ -1,6 +1,6 @@
 # `vignoble` Configuration Reference
 
-All tools in the **`vignoble`** suite (**`cep`** and **`sarment`**) share a unified, cascading TOML configuration system.
+All tools in the **`vignoble`** suite (**`cep`**, **`sarment`**, and **`saisonnier`**) share a unified, cascading TOML configuration system.
 
 ---
 
@@ -30,9 +30,9 @@ Configuration files are discovered and merged from **lowest to highest precedenc
    - `./.vignoble.toml`
 8. **CLI flags** (highest precedence)
 
-> **Note on `[repos."<repo>"]` sections:** Any configuration file (most commonly `~/.config/vignoble/config.toml`) can also include `[repos."<repo>"]` sections. Those inline repo sections are applied immediately after the file's own `[cep]` and `[sarment]` sections.
+> **Note on `[repos."<repo>"]` sections:** Any configuration file (most commonly `~/.config/vignoble/config.toml`) can also include `[repos."<repo>"]` sections. Those inline repo sections are applied immediately after the file's own `[cep]`, `[sarment]`, and `[saisonnier]` sections.
 >
-> **Tip:** Run `cep --help` or `sarment --help` in any directory to see the exact list of active configuration files currently in use.
+> **Tip:** Run `cep --help`, `sarment --help`, or `saisonnier --help` in any directory to see the exact list of active configuration files currently in use.
 
 ---
 
@@ -230,7 +230,7 @@ Best when a repository has longer scripts (`branch_script` / `check_script`) tha
     └── dd-source.toml       # Automatically loaded when main repo is "dd-source"
 ```
 
-Inside `~/.config/vignoble/repos/web-ui.toml`, use the standard top-level `[sarment]` / `[cep]` schema (no `[repos."web-ui"]` prefix required):
+Inside `~/.config/vignoble/repos/web-ui.toml`, use the standard top-level `[sarment]` / `[cep]` / `[saisonnier]` schema (no `[repos."web-ui"]` prefix required):
 
 ```toml
 [sarment]
@@ -241,3 +241,54 @@ branch_script = '''
 git show origin/preprod:.gitlab-ci.yml | awk -F': ' '/CURRENT_STAGING/ {print $2; exit}'
 '''
 ```
+
+---
+
+## 5. `saisonnier` — Autonomous Worker Configuration (`[saisonnier]` & `[parcelle]`)
+
+Configure `saisonnier` under `[saisonnier]` (and optional remote hosts under `[parcelle.<name>]`):
+
+```toml
+[saisonnier]
+default_profile = "pi"
+branch_template = "saisonnier/{run_id}"
+base = "origin/main"
+
+[saisonnier.profiles.pi]
+run = 'pi -p --session "{session_path}" "$SAISONNIER_PROMPT"'
+resume = 'pi --session "{session_path}"'
+
+[saisonnier.profiles.claude]
+run = 'claude -p --session-id "{session_id}" "$SAISONNIER_PROMPT"'
+resume = 'claude --resume "{session_id}"'
+
+[parcelle.devbox]
+host = "user@devbox"
+path = "projects/my-repo"
+```
+
+### `[saisonnier]` Entries
+
+| Key | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `default_profile` | `string` | `"pi"` | Default agent profile name used when `--profile` is omitted. |
+| `branch_template` | `string` | `"saisonnier/{run_id}"` | Branch name template used when `--branch` is omitted. Supports `{run_id}`, `{slug}`, and `{user}`. |
+| `base` | `string` (optional) | Falls back to `[cep].base_ref` / inferred default | Default base ref when creating a branch for a task. |
+| `profiles.<name>.run` | `string` or `array of strings` | Built-in defaults for `pi` and `claude` | Autonomous execution command template. Supports `{prompt_file}`, `{branch}`, `{cep}`, `{path}`, `{session_path}`, `{session_id}`, and `{run_id}` placeholders, plus `$SAISONNIER_PROMPT` / `$SAISONNIER_PROMPT_FILE` environment variables. |
+| `profiles.<name>.resume` | `string` or `array of strings` | Built-in defaults for `pi` and `claude` | Interactive resume command template used by `saisonnier resume <run-id>` (executed directly in the current terminal by default, or in `tmux` when `--tmux` is passed). |
+
+### Storage & Lifecycle Artifacts (`<git-common-dir>/vignoble/`)
+
+- `queue/<task-id>.json` — Queued tasks created by `saisonnier enqueue` and editable via `saisonnier edit <task-id>` or removable via `saisonnier cancel <task-id>`.
+- `runs/<run-id>.json` — Run receipt (`running`, `completed`, `no_changes`, `dirty`, `failed`, `crashed`, `cancelled`), inspected via `saisonnier inspect <run-id>` and removed via `saisonnier clean [<run-id>...]`.
+- `runs/<run-id>.log` — Combined stdout/stderr captured during execution, viewable or streamable via `saisonnier logs [-f] [-n <lines>] <run-id>`.
+- `runs/<run-id>.prompt.md` — Task prompt snapshot passed to the worker via `{prompt_file}` and `$SAISONNIER_PROMPT` / `$SAISONNIER_PROMPT_FILE`.
+- `runs/<run-id>.session.jsonl` — Agent session path exposed via `{session_path}` / `$SAISONNIER_SESSION_PATH` for `saisonnier resume <run-id>`.
+
+### `[parcelle.<name>]` Entries
+
+| Key | Type | Description |
+| :--- | :--- | :--- |
+| `host` | `string` | SSH destination (for example `"user@devbox"`). |
+| `path` | `string` | Remote repository path on the target host. |
+

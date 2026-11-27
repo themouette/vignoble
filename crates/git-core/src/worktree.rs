@@ -253,6 +253,11 @@ pub fn is_worktree_dirty(git: &GitRunner, worktree_path: &Path) -> Result<bool> 
     Ok(!out.trim().is_empty())
 }
 
+pub fn worktree_head_sha(git: &GitRunner, worktree_path: &Path) -> Result<String> {
+    let path_str = worktree_path.to_string_lossy();
+    git.git(&["-C", path_str.as_ref(), "rev-parse", "HEAD"])
+}
+
 pub fn get_history_path(git: &GitRunner) -> Option<PathBuf> {
     git.git(&["config", "--get", "cep.history-path"])
         .ok()

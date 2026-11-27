@@ -1,4 +1,4 @@
-use crate::commands::ExecutionContext;
+use crate::commands::{ensure_not_managed_saisonnier, ExecutionContext};
 use anyhow::{anyhow, Result};
 use clap::Args;
 use cli_core::ui::{color_str, GREEN_TICK_SYMBOL};
@@ -11,6 +11,7 @@ pub struct DetachArgs {
 }
 
 pub fn execute(ctx: &ExecutionContext, args: &DetachArgs) -> Result<()> {
+    ensure_not_managed_saisonnier("detach")?;
     let worktrees = list_worktrees(&ctx.git)?;
 
     let wt = match &args.target {

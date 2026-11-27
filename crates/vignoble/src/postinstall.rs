@@ -7,7 +7,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub const SUITE_SUBTOOLS: &[&str] = &["sarment", "cep"];
+pub const SUITE_SUBTOOLS: &[&str] = &["sarment", "cep", "saisonnier"];
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum BuildFlavor {
@@ -271,6 +271,13 @@ fn create_tool_link(exe_path: &Path, _exe_file_name: &Path, link_path: &Path) ->
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn test_suite_subtools_includes_saisonnier() {
+        assert!(SUITE_SUBTOOLS.contains(&"sarment"));
+        assert!(SUITE_SUBTOOLS.contains(&"cep"));
+        assert!(SUITE_SUBTOOLS.contains(&"saisonnier"));
+    }
 
     #[test]
     fn test_install_suite_links_creates_and_is_idempotent() {

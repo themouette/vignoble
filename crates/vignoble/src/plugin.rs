@@ -245,6 +245,7 @@ version: {version}
 - **Detach HEAD while keeping claim lock:** `cep detach [target]`
 - **Release worktree back to the pool:** `cep release [target]` (detaches `HEAD` and unlocks the worktree).
 - **Target resolution precedence:** `1. short name` > `2. checked-out branch` > `3. filesystem path`.
+- **Managed `saisonnier` sessions (`VIGNOBLE_SAISONNIER=1`):** When `VIGNOBLE_SAISONNIER=1` is set in the environment, do **not** run `cep claim`, `cep detach`, or `cep release`. `saisonnier` manages the worktree lifecycle automatically and blocks those commands.
 
 ## Branch Stage Status and Pruning (`sarment`)
 

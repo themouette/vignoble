@@ -140,10 +140,16 @@ template = "{repo}/{name}"
 "#;
     fs::write(env.local_dir.join(".vignoble.toml"), custom_cfg).unwrap();
 
+    let second_name = if wt_name == "syrah" {
+        "merlot"
+    } else {
+        "syrah"
+    };
+
     env.cmd()
         .args([
             "create",
-            "syrah",
+            second_name,
             "-b",
             "feat/custom-branch",
             "-m",
@@ -157,7 +163,7 @@ template = "{repo}/{name}"
         .path()
         .join("custom-pool")
         .join("my-repo")
-        .join("syrah");
+        .join(second_name);
     assert!(expected_custom_path.is_dir());
 
     let branch_in_syrah = run_git(
@@ -479,4 +485,26 @@ fn test_claim_shell_eval_no_cd_stderr_hygiene_and_history() {
     assert!(String::from_utf8_lossy(&print_path.stderr)
         .trim()
         .is_empty());
+}
+
+#[test]
+fn test_saisonnier_env_blocks_cep_claim_detach_and_release() {
+    let env = TestGitEnv::setup();
+    env.cmd().args(["create", "syrah"]).assert().success();
+
+    for (cmd_name, args) in [
+        ("claim", vec!["claim", "syrah"]),
+        ("detach", vec!["detach", "syrah"]),
+        ("release", vec!["release", "syrah"]),
+    ] {
+        env.cmd()
+            .env("VIGNOBLE_SAISONNIER", "1")
+            .args(&args)
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains(format!(
+                "Cannot run 'cep {}' inside a managed saisonnier session (VIGNOBLE_SAISONNIER=1)",
+                cmd_name
+            )));
+    }
 }
