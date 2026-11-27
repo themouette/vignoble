@@ -1,6 +1,8 @@
 use anyhow::{bail, Context, Result};
 use clap::{Subcommand, ValueEnum};
-use cli_core::ui::{color_str, GREEN_TICK_SYMBOL, RED_CROSS_SYMBOL};
+use cli_core::ui::{
+    color_str, AGENT_WAITING_SYMBOL, AGENT_WORKING_SYMBOL, GREEN_TICK_SYMBOL, RED_CROSS_SYMBOL,
+};
 use dialoguer::{console::Term, theme::ColorfulTheme, MultiSelect};
 use serde_json::{json, Value};
 use std::{
@@ -237,7 +239,7 @@ version: {version}
 
 `cep` manages a pool of long-living, reusable git worktrees named after French grape varieties (`merlot`, `syrah`, `pinot`, `gamay`, `chenin`, `chardonnay`, etc.).
 
-- **List worktrees:** `cep` or `cep list` (shows `@` current worktree, checked-out branch or `(detached)`, lock state, and `🤖` / `💬` agent status).
+- **List worktrees:** `cep` or `cep list` (shows `@` current worktree, checked-out branch or `(detached)`, lock state, and `{working}` / `{waiting}` agent status).
 - **Create a pooled worktree:** `cep create [name]` (defaults to detached `HEAD` and a random grape variety name).
 - **Claim an available worktree for exclusive work:** `cep claim [target] -b <branch> -m "<reason>" [--create]`
 - **Detach HEAD while keeping claim lock:** `cep detach [target]`
@@ -249,39 +251,45 @@ version: {version}
 - **Show branch progression across stages (`dev`, `staging`, `preprod`, `prod`):** `sarment` (or `sarment -u` to skip fetch).
 - **List branches in a stage:** `sarment list <stage>`
 - **Delete merged local branches in a stage (skips branches checked out in any worktree):** `sarment clean <stage>`
-"#
+"#,
+        working = AGENT_WORKING_SYMBOL,
+        waiting = AGENT_WAITING_SYMBOL,
     )
 }
 
-pub fn render_pi_extension() -> &'static str {
-    r#"import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+pub fn render_pi_extension() -> String {
+    format!(
+        r#"import type {{ ExtensionAPI }} from "@earendil-works/pi-coding-agent";
 
-export default function (pi: ExtensionAPI) {
-  pi.on("agent_start", async (_event, ctx) => {
-    try {
-      await pi.exec("vignoble", ["agent-state", "set", "🤖"], { cwd: ctx.cwd });
-    } catch {
+export default function (pi: ExtensionAPI) {{
+  pi.on("agent_start", async (_event, ctx) => {{
+    try {{
+      await pi.exec("vignoble", ["agent-state", "set", "{working}"], {{ cwd: ctx.cwd }});
+    }} catch {{
       // Ignore errors outside git repositories
-    }
-  });
+    }}
+  }});
 
-  pi.on("agent_settled", async (_event, ctx) => {
-    try {
-      await pi.exec("vignoble", ["agent-state", "set", "💬"], { cwd: ctx.cwd });
-    } catch {
+  pi.on("agent_settled", async (_event, ctx) => {{
+    try {{
+      await pi.exec("vignoble", ["agent-state", "set", "{waiting}"], {{ cwd: ctx.cwd }});
+    }} catch {{
       // Ignore errors outside git repositories
-    }
-  });
+    }}
+  }});
 
-  pi.on("session_shutdown", async (_event, ctx) => {
-    try {
-      await pi.exec("vignoble", ["agent-state", "clear"], { cwd: ctx.cwd });
-    } catch {
+  pi.on("session_shutdown", async (_event, ctx) => {{
+    try {{
+      await pi.exec("vignoble", ["agent-state", "clear"], {{ cwd: ctx.cwd }});
+    }} catch {{
       // Ignore errors outside git repositories
-    }
-  });
-}
-"#
+    }}
+  }});
+}}
+"#,
+        working = AGENT_WORKING_SYMBOL,
+        waiting = AGENT_WAITING_SYMBOL,
+    )
 }
 
 fn render_claude_marketplace_json(version: &str) -> String {
@@ -311,6 +319,14 @@ fn render_claude_plugin_json(version: &str) -> String {
 }
 
 fn render_claude_hooks_json() -> String {
+    let set_working = format!(
+        "vignoble agent-state set \"{}\" || true",
+        AGENT_WORKING_SYMBOL
+    );
+    let set_waiting = format!(
+        "vignoble agent-state set \"{}\" || true",
+        AGENT_WAITING_SYMBOL
+    );
     serde_json::to_string_pretty(&json!({
         "hooks": {
             "UserPromptSubmit": [
@@ -318,7 +334,7 @@ fn render_claude_hooks_json() -> String {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "vignoble agent-state set \"🤖\" || true"
+                            "command": set_working
                         }
                     ]
                 }
@@ -328,7 +344,7 @@ fn render_claude_hooks_json() -> String {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "vignoble agent-state set \"💬\" || true"
+                            "command": set_waiting
                         }
                     ]
                 }
@@ -338,7 +354,7 @@ fn render_claude_hooks_json() -> String {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "vignoble agent-state set \"💬\" || true"
+                            "command": set_waiting
                         }
                     ]
                 }
@@ -348,7 +364,7 @@ fn render_claude_hooks_json() -> String {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": "vignoble agent-state set \"💬\" || true"
+                            "command": set_waiting
                         }
                     ]
                 }

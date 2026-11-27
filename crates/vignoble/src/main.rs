@@ -7,7 +7,7 @@ use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::generate;
 use cli_core::{
-    ui::color_str,
+    ui::{agent_symbols_help_section, color_str},
     update::{self, UpdateArgs},
 };
 use plugin::PluginCommand;
@@ -162,6 +162,7 @@ enum Commands {
     },
 
     /// Manage AI coding-agent skills and activity hooks (Pi, Claude Code)
+    #[command(after_help = agent_symbols_help_section())]
     Plugin {
         #[command(subcommand)]
         command: PluginCommand,

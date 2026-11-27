@@ -48,6 +48,22 @@ cep cd
 cep remove syrah
 ```
 
+### Status Symbols
+
+- `*` : upstream only
+- `✔` : up to date with upstream
+- `⬆` : ahead of upstream (needs push)
+- `⬇` : behind upstream (needs pull)
+- `⤮` : diverged from upstream
+- `?` : local only (no upstream)
+
+### Agent Harness Icons
+
+Installed automatically via `vignoble plugin install`:
+
+- `🤖` : coding agent is actively working in the worktree
+- `💬` : coding agent is idle or waiting for user input
+
 ## Configuration
 
 `cep` shares the unified `vignoble` TOML configuration files, loaded and merged from lowest to highest precedence:
