@@ -381,3 +381,57 @@ fn test_squash_merge_detection_on_demand() {
         .success()
         .stdout("feat/squashed-pr\n");
 }
+
+#[test]
+fn test_centralized_per_repo_config_inline_and_drop_in() {
+    let env = TestGitEnv::setup();
+
+    run_git(&env.local_dir, &["checkout", "-b", "feat/centralized"]);
+    commit_file(&env.local_dir, "c.txt", "c\n", "Centralized feature");
+    run_git(&env.local_dir, &["checkout", "main"]);
+
+    // 1. Inline `[repos."local".sarment]` in `~/.config/vignoble/config.toml`
+    let global_cfg_dir = env._tmp.path().join(".config").join("vignoble");
+    fs::create_dir_all(&global_cfg_dir).unwrap();
+    let global_cfg = r#"
+[repos."local".sarment]
+stages = ["main", "partial-staging"]
+
+[repos."local".sarment.stage.partial-staging]
+check_script = '''
+if [ "$1" = "feat/centralized" ]; then
+  echo "from-inline-repos"
+  exit 0
+fi
+exit 1
+'''
+"#;
+    fs::write(global_cfg_dir.join("config.toml"), global_cfg).unwrap();
+
+    env.cmd()
+        .arg("-u")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("from-inline-repos"));
+
+    // 2. Drop-in `~/.config/vignoble/repos/local.toml` overrides inline `[repos."local"]`
+    let repos_dir = global_cfg_dir.join("repos");
+    fs::create_dir_all(&repos_dir).unwrap();
+    let drop_in_cfg = r#"
+[sarment.stage.partial-staging]
+check_script = '''
+if [ "$1" = "feat/centralized" ]; then
+  echo "from-repos-drop-in"
+  exit 0
+fi
+exit 1
+'''
+"#;
+    fs::write(repos_dir.join("local.toml"), drop_in_cfg).unwrap();
+
+    env.cmd()
+        .arg("-u")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("from-repos-drop-in"));
+}

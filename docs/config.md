@@ -16,17 +16,22 @@ Configuration files are discovered and merged from **lowest to highest precedenc
 3. **Home directory:**
    - `~/.vignoble`
    - `~/.vignoble.toml`
-4. **Parent directories (walking down from `/` to the parent of the current working directory):**
+4. **Centralized per-repository drop-in files (`<repo>` = main repository directory name, e.g. `web-ui`):**
+   - `~/.config/vignoble/repos/<repo>.toml` (and OS config dir `vignoble/repos/<repo>.toml`)
+   - `~/.config/vignoble/repos/<repo>` (when it is a file)
+5. **Parent directories (walking down from `/` to the parent of the current working directory):**
    - `<parent>/.vignoble`
    - `<parent>/.vignoble.toml`
-5. **Main Git repository root (even when running inside a secondary `cep` worktree):**
+6. **Main Git repository root (even when running inside a secondary `cep` worktree):**
    - `<main-repo-root>/.vignoble`
    - `<main-repo-root>/.vignoble.toml`
-6. **Current working directory:**
+7. **Current working directory:**
    - `./.vignoble`
    - `./.vignoble.toml`
-7. **CLI flags** (highest precedence)
+8. **CLI flags** (highest precedence)
 
+> **Note on `[repos."<repo>"]` sections:** Any configuration file (most commonly `~/.config/vignoble/config.toml`) can also include `[repos."<repo>"]` sections. Those inline repo sections are applied immediately after the file's own `[cep]` and `[sarment]` sections.
+>
 > **Tip:** Run `cep --help` or `sarment --help` in any directory to see the exact list of active configuration files currently in use.
 
 ---
@@ -171,5 +176,68 @@ branch="$1"
 # First line of stdout is shown next to the branch in `sarment`:
 echo "1/2 staging branches"
 exit 0
+'''
+```
+
+---
+
+## 4. Centralized Per-Repository Configuration (No Files in Repo Root)
+
+When working in shared repositories where you cannot commit a `.vignoble.toml` file (and want all your configuration centralized in `~/.config/vignoble/`), `vignoble` resolves the **main repository directory name** (`<repo>`, e.g. `web-ui` or `dd-source`) via `git rev-parse --git-common-dir`—so it matches `"web-ui"` even when your shell is inside a linked `cep` worktree like `~/worktrees/web-ui/syrah`.
+
+You can organize per-repository configuration in two ways (or combine them):
+
+### Option A: Inline `[repos."<repo>"]` sections in `~/.config/vignoble/config.toml`
+
+Best for keeping everything in a single dotfiles-tracked file with concise per-repository overrides:
+
+```toml
+# Global defaults for all repositories
+[cep]
+location = "~/worktrees"
+template = "{repo}/{name}"
+
+[sarment]
+remote = "origin"
+stages = ["main", "master", "prod", "preprod", "staging"]
+
+# Per-repository override for `web-ui`
+[repos."web-ui".sarment]
+stages = ["prod", "preprod", "staging"]
+
+[repos."web-ui".sarment.stage.staging]
+branch_script = '''
+git show origin/preprod:.gitlab-ci.yml | awk -F': ' '/CURRENT_STAGING/ {print $2; exit}'
+'''
+
+# Per-repository override for `dd-source` (both sarment and cep)
+[repos."dd-source".cep]
+location = "/Volumes/fast-ssd/worktrees"
+
+[repos."dd-source".sarment]
+stages = ["main", "staging", "partial-staging"]
+```
+
+### Option B: Drop-in files in `~/.config/vignoble/repos/<repo>.toml`
+
+Best when a repository has longer scripts (`branch_script` / `check_script`) that you want to isolate in a dedicated file:
+
+```text
+~/.config/vignoble/
+├── config.toml              # Global defaults
+└── repos/
+    ├── web-ui.toml          # Automatically loaded when main repo is "web-ui"
+    └── dd-source.toml       # Automatically loaded when main repo is "dd-source"
+```
+
+Inside `~/.config/vignoble/repos/web-ui.toml`, use the standard top-level `[sarment]` / `[cep]` schema (no `[repos."web-ui"]` prefix required):
+
+```toml
+[sarment]
+stages = ["prod", "preprod", "staging"]
+
+[sarment.stage.staging]
+branch_script = '''
+git show origin/preprod:.gitlab-ci.yml | awk -F': ' '/CURRENT_STAGING/ {print $2; exit}'
 '''
 ```

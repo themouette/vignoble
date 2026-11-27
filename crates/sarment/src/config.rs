@@ -1,5 +1,5 @@
 use cli_core::{
-    config::{discover_cascading_paths, load_toml_file},
+    config::{discover_cascading_paths, load_toml_file, resolve_repo_name},
     Result as CliResult,
 };
 use git_core::{StageDefinition, StageMode};
@@ -69,8 +69,21 @@ pub struct PartialSarmentSection {
     pub stage: HashMap<String, StageConfig>,
 }
 
+/// Per-repository block under `[repos."<repo>"]` in a config file.
+/// Supports both `[repos."<repo>".sarment]` and shorthand keys directly under `[repos."<repo>"]`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct RepoPartialConfig {
+    pub remote: Option<String>,
+    pub squash: Option<bool>,
+    pub stages: Option<Vec<String>>,
+    #[serde(alias = "stages_config")]
+    pub stage: HashMap<String, StageConfig>,
+    pub sarment: Option<PartialSarmentSection>,
+}
+
 /// Partial config deserialized from a unified `vignoble` config file.
-/// Supports both `[sarment]`-namespaced keys and top-level keys.
+/// Supports `[sarment]`-namespaced keys, top-level keys, and `[repos."<repo>"]` overrides.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct PartialConfig {
@@ -81,6 +94,7 @@ pub struct PartialConfig {
     #[serde(alias = "stages_config")]
     pub stage: HashMap<String, StageConfig>,
     pub sarment: Option<PartialSarmentSection>,
+    pub repos: HashMap<String, RepoPartialConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,6 +138,14 @@ impl EffectiveConfig {
     }
 
     pub fn apply_partial(self, partial: PartialConfig) -> Self {
+        self.apply_partial_for_repo(partial, None)
+    }
+
+    pub fn apply_partial_for_repo(
+        self,
+        mut partial: PartialConfig,
+        repo_name: Option<&str>,
+    ) -> Self {
         let top_level = PartialSarmentSection {
             remote: partial.remote,
             squash: partial.squash,
@@ -134,15 +156,30 @@ impl EffectiveConfig {
         if let Some(sarment_section) = partial.sarment {
             updated = updated.apply_section(sarment_section);
         }
+        if let Some(name) = repo_name {
+            if let Some(repo_cfg) = partial.repos.remove(name) {
+                let repo_top = PartialSarmentSection {
+                    remote: repo_cfg.remote,
+                    squash: repo_cfg.squash,
+                    stages: repo_cfg.stages,
+                    stage: repo_cfg.stage,
+                };
+                updated = updated.apply_section(repo_top);
+                if let Some(repo_sarment) = repo_cfg.sarment {
+                    updated = updated.apply_section(repo_sarment);
+                }
+            }
+        }
         updated
     }
 
     pub fn load(cwd: &Path, main_repo_root: Option<&Path>) -> CliResult<Self> {
         let mut config = EffectiveConfig::default();
+        let repo_name = resolve_repo_name(cwd, main_repo_root);
         let paths = discover_config_paths(cwd, main_repo_root);
         for path in paths {
             let partial: PartialConfig = load_toml_file(&path)?;
-            config = config.apply_partial(partial);
+            config = config.apply_partial_for_repo(partial, repo_name.as_deref());
         }
         Ok(config)
     }
@@ -300,5 +337,39 @@ branch_script = "echo staging-42"
         let extless_idx = paths.iter().position(|p| p == &extless_cfg).unwrap();
         let toml_idx = paths.iter().position(|p| p == &toml_cfg).unwrap();
         assert!(extless_idx < toml_idx);
+    }
+
+    #[test]
+    fn test_inline_repos_section_applies_for_matching_repo_only() {
+        let toml_str = r#"
+[sarment]
+remote = "origin"
+stages = ["main", "staging"]
+
+[repos."web-ui".sarment]
+stages = ["prod", "preprod", "staging"]
+
+[repos."web-ui".sarment.stage.staging]
+branch_script = "echo staging-42"
+
+[repos."dd-source"]
+squash = true
+"#;
+        let partial: PartialConfig = toml::from_str(toml_str).unwrap();
+
+        let web_ui_cfg =
+            EffectiveConfig::default().apply_partial_for_repo(partial.clone(), Some("web-ui"));
+        assert_eq!(web_ui_cfg.stages, vec!["prod", "preprod", "staging"]);
+        assert!(!web_ui_cfg.squash);
+        let defs = web_ui_cfg.to_stage_definitions();
+        assert_eq!(
+            defs[2].mode,
+            StageMode::BranchScript("echo staging-42".to_string())
+        );
+
+        let dd_source_cfg =
+            EffectiveConfig::default().apply_partial_for_repo(partial, Some("dd-source"));
+        assert_eq!(dd_source_cfg.stages, vec!["main", "staging"]);
+        assert!(dd_source_cfg.squash);
     }
 }

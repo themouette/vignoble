@@ -1,8 +1,9 @@
 use cli_core::{
-    config::{discover_cascading_paths, load_toml_file},
+    config::{discover_cascading_paths, load_toml_file, resolve_repo_name},
     Result as CliResult,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub const APP_NAME: &str = "vignoble";
@@ -21,8 +22,19 @@ pub struct PartialCepSection {
     pub base_ref: Option<String>,
 }
 
+/// Per-repository block under `[repos."<repo>"]` in a config file.
+/// Supports both `[repos."<repo>".cep]` and shorthand keys directly under `[repos."<repo>"]`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct RepoPartialConfig {
+    pub location: Option<String>,
+    pub template: Option<String>,
+    pub base_ref: Option<String>,
+    pub cep: Option<PartialCepSection>,
+}
+
 /// Partial config deserialized from a unified `vignoble` config file.
-/// Supports both `[cep]`-namespaced keys and top-level keys.
+/// Supports `[cep]`-namespaced keys, top-level keys, and `[repos."<repo>"]` overrides.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct PartialConfig {
@@ -30,6 +42,7 @@ pub struct PartialConfig {
     pub template: Option<String>,
     pub base_ref: Option<String>,
     pub cep: Option<PartialCepSection>,
+    pub repos: HashMap<String, RepoPartialConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +77,14 @@ impl EffectiveConfig {
     }
 
     pub fn apply_partial(self, partial: PartialConfig) -> Self {
+        self.apply_partial_for_repo(partial, None)
+    }
+
+    pub fn apply_partial_for_repo(
+        self,
+        mut partial: PartialConfig,
+        repo_name: Option<&str>,
+    ) -> Self {
         let top_level = PartialCepSection {
             location: partial.location,
             template: partial.template,
@@ -73,15 +94,29 @@ impl EffectiveConfig {
         if let Some(cep_section) = partial.cep {
             updated = updated.apply_section(cep_section);
         }
+        if let Some(name) = repo_name {
+            if let Some(repo_cfg) = partial.repos.remove(name) {
+                let repo_top = PartialCepSection {
+                    location: repo_cfg.location,
+                    template: repo_cfg.template,
+                    base_ref: repo_cfg.base_ref,
+                };
+                updated = updated.apply_section(repo_top);
+                if let Some(repo_cep) = repo_cfg.cep {
+                    updated = updated.apply_section(repo_cep);
+                }
+            }
+        }
         updated
     }
 
     pub fn load(cwd: &Path, main_repo_root: Option<&Path>) -> CliResult<Self> {
         let mut config = EffectiveConfig::default();
+        let repo_name = resolve_repo_name(cwd, main_repo_root);
         let paths = discover_config_paths(cwd, main_repo_root);
         for path in paths {
             let partial: PartialConfig = load_toml_file(&path)?;
-            config = config.apply_partial(partial);
+            config = config.apply_partial_for_repo(partial, repo_name.as_deref());
         }
         Ok(config)
     }
@@ -177,5 +212,22 @@ remote = "origin"
         let main_repo = Path::new("/Users/dev/projects/my-app");
         let resolved = cfg.resolve_worktree_path(main_repo, "merlot");
         assert_eq!(resolved, PathBuf::from("/tmp/wt-pool/my-app/merlot"));
+    }
+
+    #[test]
+    fn test_inline_repos_section_overrides_cep_config() {
+        let toml_str = r#"
+[cep]
+location = "~/worktrees"
+template = "{repo}/{name}"
+
+[repos."dd-source".cep]
+location = "/Volumes/fast-ssd/worktrees"
+base_ref = "origin/main"
+"#;
+        let partial: PartialConfig = toml::from_str(toml_str).unwrap();
+        let cfg = EffectiveConfig::default().apply_partial_for_repo(partial, Some("dd-source"));
+        assert_eq!(cfg.location.as_deref(), Some("/Volumes/fast-ssd/worktrees"));
+        assert_eq!(cfg.base_ref.as_deref(), Some("origin/main"));
     }
 }

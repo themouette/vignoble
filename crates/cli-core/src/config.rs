@@ -4,6 +4,17 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Resolve the repository directory name from `main_repo_root` (preferred, so linked worktrees
+/// still resolve to the main repository name) or `cwd`.
+pub fn resolve_repo_name(cwd: &Path, main_repo_root: Option<&Path>) -> Option<String> {
+    main_repo_root
+        .or(Some(cwd))
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .map(String::from)
+}
+
 /// Return ordered config file paths from lowest precedence to highest precedence.
 ///
 /// Order:
@@ -11,9 +22,10 @@ use std::path::{Path, PathBuf};
 /// 2. `~/.config/<app_name>.toml` and `dirs::config_dir()/<app_name>.toml`
 /// 3. `~/.config/<app_name>` (when it is a regular file)
 /// 4. `~/.<app_name>` and `~/.<app_name>.toml`
-/// 5. `<parent>/.<app_name>` and `<parent>/.<app_name>.toml` walking down from `/` to parent of `cwd`
-/// 6. `<main_repo_root>/.<app_name>` and `<main_repo_root>/.<app_name>.toml`
-/// 7. `<cwd>/.<app_name>` and `<cwd>/.<app_name>.toml`
+/// 5. `~/.config/<app_name>/repos/<repo>.toml`, `dirs::config_dir()/<app_name>/repos/<repo>.toml`, and `~/.config/<app_name>/repos/<repo>`
+/// 6. `<parent>/.<app_name>` and `<parent>/.<app_name>.toml` walking down from `/` to parent of `cwd`
+/// 7. `<main_repo_root>/.<app_name>` and `<main_repo_root>/.<app_name>.toml`
+/// 8. `<cwd>/.<app_name>` and `<cwd>/.<app_name>.toml`
 pub fn discover_cascading_paths(
     app_name: &str,
     cwd: &Path,
@@ -47,6 +59,20 @@ pub fn discover_cascading_paths(
         candidates.push(home.join(".config").join(app_name));
         candidates.push(home.join(&dot_name));
         candidates.push(home.join(&dot_toml_name));
+    }
+
+    if let Some(repo_name) = resolve_repo_name(cwd, main_repo_root) {
+        let repo_toml = format!("{}.toml", repo_name);
+        if let Some(ref home) = home_dir {
+            let repos_dir = home.join(".config").join(app_name).join("repos");
+            candidates.push(repos_dir.join(&repo_toml));
+            candidates.push(repos_dir.join(&repo_name));
+        }
+        if let Some(os_config) = dirs::config_dir() {
+            let repos_dir = os_config.join(app_name).join("repos");
+            candidates.push(repos_dir.join(&repo_toml));
+            candidates.push(repos_dir.join(&repo_name));
+        }
     }
 
     let mut ancestors: Vec<&Path> = cwd.ancestors().collect();
@@ -142,5 +168,16 @@ mod tests {
         let main_idx = found.iter().position(|p| p == &main_cfg).unwrap();
         let wt_idx = found.iter().position(|p| p == &wt_cfg).unwrap();
         assert!(main_idx < wt_idx);
+    }
+
+    #[test]
+    fn test_resolve_repo_name_prefers_main_repo_root() {
+        let cwd = Path::new("/Users/dev/worktrees/syrah");
+        let main_repo = Path::new("/Users/dev/projects/web-ui");
+        assert_eq!(
+            resolve_repo_name(cwd, Some(main_repo)).as_deref(),
+            Some("web-ui")
+        );
+        assert_eq!(resolve_repo_name(cwd, None).as_deref(), Some("syrah"));
     }
 }
