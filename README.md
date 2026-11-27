@@ -55,7 +55,7 @@ vignoble plugin status            # Check installed agent plugin status
 
 ## Configuration
 
-Configure both tools in `~/.config/vignoble.toml` (global) or `./.vignoble.toml` (per-repo/directory):
+Configure both tools in `~/.config/vignoble.toml` (global) or `./.vignoble.toml` (per-repo/directory). See [`docs/config.md`](docs/config.md) for the full configuration reference.
 
 ```toml
 [cep]
