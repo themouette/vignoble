@@ -53,7 +53,7 @@ base_ref = "origin/main"
 | :--- | :--- | :--- | :--- |
 | `location` | `string` (optional) | `{parent}` (parent directory of the main repository) | Base directory under which relative `template` paths are resolved. Supports `~` home expansion and `{repo}`, `{name}`, `{parent}` placeholders. |
 | `template` | `string` | `"{repo}-worktrees/{name}"` | Path template for each worktree. If `template` expands to an absolute path (or starts with `~/...`), it is used directly; otherwise it is joined onto `location`. |
-| `base_ref` | `string` (optional) | `HEAD` | Default Git ref used when creating a new detached worktree (`cep create` without `--base`) if `--base` is not passed on the CLI. |
+| `base_ref` | `string` (optional) | Inferred (`origin/HEAD` → `origin/{main,master,prod}` → `{main,master,prod}` → `HEAD`) | Default Git ref used when creating a detached worktree (`cep create`) or starting a new branch on claim (`cep claim -b <new-branch>`). Overridden by `--base`. |
 
 ### Template Placeholders
 

@@ -2,6 +2,7 @@ use cli_core::{
     config::{discover_cascading_paths, load_toml_file, resolve_repo_name},
     Result as CliResult,
 };
+use git_core::GitRunner;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -152,6 +153,20 @@ impl EffectiveConfig {
         };
 
         base_dir.join(expanded_template)
+    }
+
+    /// Resolve the base ref to use when creating a worktree or new branch:
+    /// 1. Explicit CLI `--base` argument
+    /// 2. Explicit `[cep] base_ref` config value
+    /// 3. Inferred repository default branch (`origin/HEAD`, `origin/main`, `origin/master`, `origin/prod`, or local equivalent)
+    pub fn resolve_base_ref(&self, git: &GitRunner, cli_base: Option<&str>) -> Option<String> {
+        if let Some(explicit) = cli_base.filter(|s| !s.is_empty()) {
+            return Some(explicit.to_string());
+        }
+        if let Some(configured) = self.base_ref.as_deref().filter(|s| !s.is_empty()) {
+            return Some(configured.to_string());
+        }
+        git.infer_default_base_ref("origin")
     }
 }
 

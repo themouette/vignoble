@@ -125,6 +125,37 @@ impl GitRunner {
             .is_ok()
     }
 
+    /// Infer the default base ref for new worktrees or branches:
+    /// 1. `refs/remotes/<remote>/HEAD` symbolic ref (for example `origin/main` or `origin/prod`)
+    /// 2. First existing remote branch in `<remote>/main`, `<remote>/master`, `<remote>/prod`
+    /// 3. First existing local branch in `main`, `master`, `prod`
+    pub fn infer_default_base_ref(&self, remote: &str) -> Option<String> {
+        let remote_head_ref = format!("refs/remotes/{}/HEAD", remote);
+        if let Ok(sym) = self.git(&["symbolic-ref", "--quiet", "--short", &remote_head_ref]) {
+            if !sym.is_empty()
+                && self
+                    .git(&["rev-parse", "--verify", "--quiet", &sym])
+                    .is_ok()
+            {
+                return Some(sym);
+            }
+        }
+
+        for candidate in ["main", "master", "prod"] {
+            if self.branch_exists(candidate, Some(remote)) {
+                return Some(format!("{}/{}", remote, candidate));
+            }
+        }
+
+        for candidate in ["main", "master", "prod"] {
+            if self.branch_exists(candidate, None) {
+                return Some(candidate.to_string());
+            }
+        }
+
+        None
+    }
+
     pub fn fetch(&self, remote: &str) -> Result<()> {
         println!("Fetching from {}...", remote);
         self.call_git_interactive(&["fetch", "-p", "--no-tags", remote])

@@ -374,3 +374,36 @@ fn test_cd_and_cd_dash_history_switching() {
     let default_stdout = String::from_utf8_lossy(&default_main.stdout);
     assert!(default_stdout.contains(env.local_dir.to_str().unwrap()));
 }
+
+#[test]
+fn test_inferred_base_ref_for_create_and_claim_new_branch() {
+    let env = TestGitEnv::setup();
+    let initial_main_sha = run_git(&env.local_dir, &["rev-parse", "origin/main"]);
+
+    // Advance a feature branch in the main repo (without pushing to main)
+    run_git(&env.local_dir, &["checkout", "-b", "feat/unmerged-work"]);
+    commit_file(&env.local_dir, "wip.txt", "wip\n", "WIP commit");
+    let wip_sha = run_git(&env.local_dir, &["rev-parse", "HEAD"]);
+    assert_ne!(initial_main_sha, wip_sha);
+
+    // 1. `cep create syrah` while standing on `feat/unmerged-work` infers `origin/main`
+    env.cmd().args(["create", "syrah"]).assert().success();
+    let syrah_path = env._tmp.path().join("my-repo-worktrees").join("syrah");
+    let syrah_sha = run_git(&syrah_path, &["rev-parse", "HEAD"]);
+    assert_eq!(syrah_sha, initial_main_sha);
+
+    // 2. Advance `main` and push to `origin/main` while `syrah` is sitting at the old commit
+    run_git(&env.local_dir, &["checkout", "main"]);
+    commit_file(&env.local_dir, "v2.txt", "v2\n", "Main v2");
+    run_git(&env.local_dir, &["push", "origin", "main"]);
+    let new_main_sha = run_git(&env.local_dir, &["rev-parse", "origin/main"]);
+    assert_ne!(new_main_sha, initial_main_sha);
+
+    // 3. Claim `syrah` with `-b feat/from-fresh-main`: the new branch starts at `new_main_sha`
+    env.cmd()
+        .args(["claim", "syrah", "-b", "feat/from-fresh-main"])
+        .assert()
+        .success();
+    let claimed_sha = run_git(&syrah_path, &["rev-parse", "HEAD"]);
+    assert_eq!(claimed_sha, new_main_sha);
+}

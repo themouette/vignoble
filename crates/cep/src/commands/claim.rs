@@ -4,8 +4,8 @@ use clap::Args;
 use cli_core::ui::{color_str, GREEN_TICK_SYMBOL};
 use git_core::{
     worktree::{
-        add_worktree_detached, checkout_branch_in_worktree, list_worktrees, lock_worktree,
-        resolve_worktree_target, unlock_worktree,
+        add_worktree_detached, checkout_branch_in_worktree, checkout_detached_in_worktree,
+        is_worktree_dirty, list_worktrees, lock_worktree, resolve_worktree_target, unlock_worktree,
     },
     WorktreeHead,
 };
@@ -21,6 +21,10 @@ pub struct ClaimArgs {
     /// Check out (or create) a branch in the claimed worktree
     #[arg(short = 'b', long = "branch")]
     pub branch: Option<String>,
+
+    /// Base ref to branch from when creating a new branch or claiming a detached worktree
+    #[arg(long = "base")]
+    pub base: Option<String>,
 
     /// Reason recorded in the worktree lock
     #[arg(short = 'm', long = "reason")]
@@ -41,8 +45,9 @@ pub struct ClaimArgs {
 
 pub fn execute(ctx: &ExecutionContext, args: &ClaimArgs) -> Result<()> {
     let worktrees = list_worktrees(&ctx.git)?;
+    let base_ref = ctx.config.resolve_base_ref(&ctx.git, args.base.as_deref());
 
-    let (wt_name, wt_path): (String, PathBuf) = match &args.target {
+    let (wt_name, wt_path, was_detached): (String, PathBuf, bool) = match &args.target {
         Some(target) => {
             let wt = resolve_worktree_target(&ctx.git, &worktrees, target)
                 .ok_or_else(|| anyhow!("No worktree matching '{}'", target))?;
@@ -58,7 +63,8 @@ pub fn execute(ctx: &ExecutionContext, args: &ClaimArgs) -> Result<()> {
                 }
                 unlock_worktree(&ctx.git, &wt.path)?;
             }
-            (wt.short_name, wt.path)
+            let detached = matches!(wt.head, WorktreeHead::Detached);
+            (wt.short_name, wt.path, detached)
         }
         None => {
             let candidate = worktrees
@@ -72,7 +78,8 @@ pub fn execute(ctx: &ExecutionContext, args: &ClaimArgs) -> Result<()> {
                 });
 
             if let Some(wt) = candidate {
-                (wt.short_name.clone(), wt.path.clone())
+                let detached = matches!(wt.head, WorktreeHead::Detached);
+                (wt.short_name.clone(), wt.path.clone(), detached)
             } else if args.create {
                 let existing_names: HashSet<String> =
                     worktrees.iter().map(|wt| wt.short_name.clone()).collect();
@@ -83,8 +90,8 @@ pub fn execute(ctx: &ExecutionContext, args: &ClaimArgs) -> Result<()> {
                 if let Some(parent) = new_path.parent() {
                     fs::create_dir_all(parent)?;
                 }
-                add_worktree_detached(&ctx.git, &new_path, ctx.config.base_ref.as_deref())?;
-                (new_name, new_path)
+                add_worktree_detached(&ctx.git, &new_path, base_ref.as_deref())?;
+                (new_name, new_path, true)
             } else {
                 bail!(
                     "No unclaimed worktree available in the pool. Run 'cep create' or pass '--create'."
@@ -102,7 +109,13 @@ pub fn execute(ctx: &ExecutionContext, args: &ClaimArgs) -> Result<()> {
 
     if let Some(branch) = &args.branch {
         let exists = ctx.git.branch_exists(branch, None);
-        checkout_branch_in_worktree(&ctx.git, &wt_path, branch, !exists)?;
+        checkout_branch_in_worktree(&ctx.git, &wt_path, branch, !exists, base_ref.as_deref())?;
+    } else if was_detached {
+        if let Some(base) = base_ref.as_deref() {
+            if !is_worktree_dirty(&ctx.git, &wt_path).unwrap_or(true) {
+                let _ = checkout_detached_in_worktree(&ctx.git, &wt_path, base);
+            }
+        }
     }
 
     if args.print_path {

@@ -217,15 +217,30 @@ pub fn detach_worktree_head(git: &GitRunner, worktree_path: &Path) -> Result<()>
     Ok(())
 }
 
+pub fn checkout_detached_in_worktree(
+    git: &GitRunner,
+    worktree_path: &Path,
+    base_ref: &str,
+) -> Result<()> {
+    let path_str = worktree_path.to_string_lossy();
+    git.git(&["-C", path_str.as_ref(), "checkout", "--detach", base_ref])?;
+    Ok(())
+}
+
 pub fn checkout_branch_in_worktree(
     git: &GitRunner,
     worktree_path: &Path,
     branch: &str,
     create: bool,
+    start_point: Option<&str>,
 ) -> Result<()> {
     let path_str = worktree_path.to_string_lossy();
     if create {
-        git.git(&["-C", path_str.as_ref(), "checkout", "-b", branch])?;
+        let mut args = vec!["-C", path_str.as_ref(), "checkout", "-b", branch];
+        if let Some(base) = start_point {
+            args.push(base);
+        }
+        git.git(&args)?;
     } else {
         git.git(&["-C", path_str.as_ref(), "checkout", branch])?;
     }

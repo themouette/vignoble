@@ -51,13 +51,19 @@ pub fn execute(ctx: &ExecutionContext, args: &CreateArgs) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    let base_ref = args.base.as_deref().or(ctx.config.base_ref.as_deref());
+    let base_ref = ctx.config.resolve_base_ref(&ctx.git, args.base.as_deref());
 
     if let Some(branch) = &args.branch {
         let branch_exists = ctx.git.branch_exists(branch, None);
-        add_worktree_branch(&ctx.git, &target_path, branch, !branch_exists, base_ref)?;
+        add_worktree_branch(
+            &ctx.git,
+            &target_path,
+            branch,
+            !branch_exists,
+            base_ref.as_deref(),
+        )?;
     } else {
-        add_worktree_detached(&ctx.git, &target_path, base_ref)?;
+        add_worktree_detached(&ctx.git, &target_path, base_ref.as_deref())?;
     }
 
     let should_claim = args.claim || args.reason.is_some();
