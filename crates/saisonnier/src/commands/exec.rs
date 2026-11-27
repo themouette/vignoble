@@ -151,13 +151,15 @@ pub fn execute_run(ctx: &ExecutionContext, run_id: &str, inline: bool) -> Result
         unlock_worktree(&ctx.git, &cep.path)?;
         clear_agent_marker(&ctx.git, &receipt.cep)?;
 
-        tick::execute(
-            ctx,
-            &TickArgs {
-                parcelle: None,
-                inline,
-            },
-        )?;
+        if !inline {
+            tick::execute(
+                ctx,
+                &TickArgs {
+                    parcelle: None,
+                    inline: false,
+                },
+            )?;
+        }
         Ok(())
     } else if exit_code == 0 {
         receipt.status = RunStatus::Dirty;

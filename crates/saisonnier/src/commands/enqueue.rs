@@ -155,13 +155,18 @@ pub fn execute(ctx: &ExecutionContext, args: &EnqueueArgs) -> Result<()> {
     );
 
     if !args.no_tick {
-        tick::execute(
+        if let Err(err) = tick::execute(
             ctx,
             &TickArgs {
                 parcelle: None,
                 inline: args.inline,
             },
-        )?;
+        ) {
+            // If tick failed before claiming/removing this task, remove it from queue
+            // so a failed enqueue does not leave a hidden ghost task behind.
+            let _ = ctx.store.remove_task(&task.task_id);
+            return Err(err);
+        }
     }
 
     Ok(())

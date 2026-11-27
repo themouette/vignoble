@@ -81,6 +81,8 @@ pub struct RunReceipt {
     pub session_path: PathBuf,
     pub session_id: String,
     pub tmux_session: String,
+    #[serde(default)]
+    pub pid: Option<u32>,
     pub started_at: String,
     pub finished_at: Option<String>,
     pub exit_code: Option<i32>,

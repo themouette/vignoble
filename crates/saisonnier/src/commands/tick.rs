@@ -188,6 +188,11 @@ fn claim_and_prepare(
     } else {
         tmux::run_session_name(&run_id)
     };
+    let pid = if inline {
+        Some(std::process::id())
+    } else {
+        None
+    };
 
     let receipt = RunReceipt {
         schema_version: SCHEMA_VERSION,
@@ -204,6 +209,7 @@ fn claim_and_prepare(
         session_path,
         session_id,
         tmux_session,
+        pid,
         started_at: now_iso8601_utc(),
         finished_at: None,
         exit_code: None,
