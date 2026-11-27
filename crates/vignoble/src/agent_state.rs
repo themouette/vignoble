@@ -54,26 +54,19 @@ mod tests {
     use tempfile::tempdir;
 
     fn init_repo(dir: &Path) {
-        Command::new("git")
-            .args(["init", "-b", "main"])
-            .current_dir(dir)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.email", "test@example.com"])
-            .current_dir(dir)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test User"])
-            .current_dir(dir)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "--allow-empty", "-m", "initial"])
-            .current_dir(dir)
-            .output()
-            .unwrap();
+        let run = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .current_dir(dir)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .output()
+                .unwrap();
+        };
+        run(&["init", "-b", "main"]);
+        run(&["config", "user.email", "test@example.com"]);
+        run(&["config", "user.name", "Test User"]);
+        run(&["commit", "--allow-empty", "-m", "initial"]);
     }
 
     #[test]

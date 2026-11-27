@@ -42,7 +42,7 @@ impl Shell {
     }
 }
 
-/// Render the shell wrapper function for `cep` in the target shell.
+/// Render the shell wrapper functions for `cep` (`cep`, `cep-dev`, `cep-debug`) in the target shell.
 pub fn render_shell_init(shell: Shell, with_completion: bool) -> String {
     let wrapper = match shell {
         Shell::Bash | Shell::Zsh => {
@@ -52,6 +52,20 @@ pub fn render_shell_init(shell: Shell, with_completion: bool) -> String {
   else
     command cep "$@"
   fi
+}
+cep-dev() {
+  if [ "$1" = "cd" ]; then
+    eval "$(command cep-dev cd --shell-eval "${@:2}")"
+  else
+    command cep-dev "$@"
+  fi
+}
+cep-debug() {
+  if [ "$1" = "cd" ]; then
+    eval "$(command cep-debug cd --shell-eval "${@:2}")"
+  else
+    command cep-debug "$@"
+  fi
 }"#
         }
         Shell::Fish => {
@@ -60,6 +74,20 @@ pub fn render_shell_init(shell: Shell, with_completion: bool) -> String {
         eval (command cep cd --shell-eval $argv[2..-1])
     else
         command cep $argv
+    end
+end
+function cep-dev
+    if test "$argv[1]" = "cd"
+        eval (command cep-dev cd --shell-eval $argv[2..-1])
+    else
+        command cep-dev $argv
+    end
+end
+function cep-debug
+    if test "$argv[1]" = "cd"
+        eval (command cep-debug cd --shell-eval $argv[2..-1])
+    else
+        command cep-debug $argv
     end
 end"#
         }
@@ -133,14 +161,20 @@ enum Commands {
     External(Vec<OsString>),
 }
 
-/// Extract the invoked binary stem from `argv[0]` (for example `"cep"` from `"/usr/local/bin/cep"`).
+/// Extract the invoked binary stem from `argv[0]`, stripping `.exe` and `-dev` / `-debug` suffixes
+/// (for example `"cep"` from `"/usr/local/bin/cep-dev"` or `"sarment"` from `"sarment-debug"`).
 pub fn invoked_tool_name(arg0: &Path) -> Option<&str> {
     let raw = arg0.to_str()?;
     let file_name = raw.rsplit(['/', '\\']).next()?;
     if file_name.is_empty() {
         return None;
     }
-    Some(file_name.strip_suffix(".exe").unwrap_or(file_name))
+    let no_ext = file_name.strip_suffix(".exe").unwrap_or(file_name);
+    let base = no_ext
+        .strip_suffix("-dev")
+        .or_else(|| no_ext.strip_suffix("-debug"))
+        .unwrap_or(no_ext);
+    Some(base)
 }
 
 fn main() {
@@ -275,9 +309,20 @@ mod tests {
             Some("cep")
         );
         assert_eq!(
+            invoked_tool_name(Path::new("/Users/dev/.local/bin/cep-dev")),
+            Some("cep")
+        );
+        assert_eq!(
+            invoked_tool_name(Path::new("/Users/dev/.local/bin/sarment-debug")),
+            Some("sarment")
+        );
+        assert_eq!(
             invoked_tool_name(Path::new("C:\\Users\\dev\\bin\\sarment.exe")),
             Some("sarment")
         );
-        assert_eq!(invoked_tool_name(Path::new("vignoble")), Some("vignoble"));
+        assert_eq!(
+            invoked_tool_name(Path::new("vignoble-dev")),
+            Some("vignoble")
+        );
     }
 }

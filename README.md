@@ -53,9 +53,12 @@ vignoble plugin upgrade           # Upgrade already-installed agent plugins to m
 vignoble plugin status            # Check installed agent plugin status
 ```
 
-## Configuration
+## Configuration & Development
 
-Configure both tools in `~/.config/vignoble.toml` (global) or `./.vignoble.toml` (per-repo/directory). See [`docs/config.md`](docs/config.md) for the full configuration reference.
+- **Configuration reference:** [`docs/config.md`](docs/config.md)
+- **Development, `-dev` / `-debug` binaries & releases:** [`docs/development.md`](docs/development.md)
+
+Configure both tools in `~/.config/vignoble/config.toml` (global) or `./.vignoble.toml` (per-repo/directory):
 
 ```toml
 [cep]
