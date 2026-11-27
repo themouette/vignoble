@@ -5,7 +5,8 @@ use cli_core::ui::{color_str, GREEN_TICK_SYMBOL};
 use git_core::{
     worktree::{
         add_worktree_detached, checkout_branch_in_worktree, checkout_detached_in_worktree,
-        is_worktree_dirty, list_worktrees, lock_worktree, resolve_worktree_target, unlock_worktree,
+        is_worktree_dirty, list_worktrees, lock_worktree, resolve_worktree_target,
+        set_history_path, unlock_worktree,
     },
     WorktreeHead,
 };
@@ -41,6 +42,14 @@ pub struct ClaimArgs {
     /// Print only the claimed worktree path to stdout (for scripting/agents)
     #[arg(long = "print-path")]
     pub print_path: bool,
+
+    /// Do not change directory into the claimed worktree (for shell integration)
+    #[arg(long = "no-cd")]
+    pub no_cd: bool,
+
+    /// Emit shell `cd '<path>'` command for `eval "$(vignoble shell-init)"`
+    #[arg(long = "shell-eval", hide = true)]
+    pub shell_eval: bool,
 }
 
 pub fn execute(ctx: &ExecutionContext, args: &ClaimArgs) -> Result<()> {
@@ -121,12 +130,23 @@ pub fn execute(ctx: &ExecutionContext, args: &ClaimArgs) -> Result<()> {
     if args.print_path {
         println!("{}", wt_path.display());
     } else {
-        println!(
+        eprintln!(
             "{}Claimed worktree {} ({})",
             color_str(GREEN_TICK_SYMBOL, "green"),
             color_str(&wt_name, "cyan"),
             wt_path.display()
         );
+
+        if args.shell_eval && !args.no_cd {
+            if let Some(current_wt) = worktrees.iter().find(|wt| wt.is_current) {
+                let _ = set_history_path(&ctx.git, &current_wt.path);
+            } else if let Ok(current_root) = ctx.git.ensure_git_repository() {
+                let _ = set_history_path(&ctx.git, &current_root);
+            }
+
+            let escaped = wt_path.to_string_lossy().replace('\'', "'\\''");
+            println!("cd '{}'", escaped);
+        }
     }
 
     Ok(())

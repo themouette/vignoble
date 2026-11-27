@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- `cep` / `vignoble`: Automatically `cd` into the claimed worktree on interactive `cep claim` (recording `cep cd -` history), add `--no-cd`, and write `cep claim` status messages to `stderr`.
 - `git-core` / `cep` / `sarment`: Avoid scanning all `refs/remotes/origin` refs when collecting local branch sync status and batch `cep list` branch and agent-marker lookups for faster execution in large repositories.
 
 ## [0.1.1] - 2026-11-27

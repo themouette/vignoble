@@ -407,3 +407,76 @@ fn test_inferred_base_ref_for_create_and_claim_new_branch() {
     let claimed_sha = run_git(&syrah_path, &["rev-parse", "HEAD"]);
     assert_eq!(claimed_sha, new_main_sha);
 }
+
+#[test]
+fn test_claim_shell_eval_no_cd_stderr_hygiene_and_history() {
+    let env = TestGitEnv::setup();
+    env.cmd().args(["create", "syrah"]).assert().success();
+    env.cmd().args(["create", "merlot"]).assert().success();
+    env.cmd().args(["create", "gamay"]).assert().success();
+
+    let syrah_path = env._tmp.path().join("my-repo-worktrees").join("syrah");
+    let merlot_path = env._tmp.path().join("my-repo-worktrees").join("merlot");
+    let gamay_path = env._tmp.path().join("my-repo-worktrees").join("gamay");
+
+    // 1. Plain `cep claim` writes status to stderr and nothing to stdout.
+    let plain = env.cmd().args(["claim", "gamay"]).output().unwrap();
+    assert!(plain.status.success());
+    assert!(String::from_utf8_lossy(&plain.stdout).trim().is_empty());
+    assert!(String::from_utf8_lossy(&plain.stderr).contains("Claimed worktree"));
+
+    // 2. `cep claim --shell-eval` writes status to stderr, emits `cd '<path>'` on stdout,
+    //    and records the previous directory in `cep.history-path` for `cep cd -`.
+    let shell_eval = env
+        .cmd()
+        .args(["claim", "syrah", "--shell-eval"])
+        .output()
+        .unwrap();
+    assert!(shell_eval.status.success());
+    let eval_stdout = String::from_utf8_lossy(&shell_eval.stdout);
+    let eval_stderr = String::from_utf8_lossy(&shell_eval.stderr);
+    assert!(eval_stdout.trim().starts_with("cd '"));
+    assert!(eval_stdout.contains(syrah_path.to_str().unwrap()));
+    assert!(eval_stderr.contains("Claimed worktree"));
+
+    let back = env
+        .cmd_in(&syrah_path)
+        .args(["cd", "--shell-eval", "-"])
+        .output()
+        .unwrap();
+    assert!(back.status.success());
+    assert!(String::from_utf8_lossy(&back.stdout).contains(env.local_dir.to_str().unwrap()));
+
+    // 3. `cep claim --shell-eval --no-cd` emits empty stdout and does not overwrite history.
+    let no_cd = env
+        .cmd_in(&gamay_path)
+        .args(["claim", "merlot", "--shell-eval", "--no-cd"])
+        .output()
+        .unwrap();
+    assert!(no_cd.status.success());
+    assert!(String::from_utf8_lossy(&no_cd.stdout).trim().is_empty());
+    assert!(String::from_utf8_lossy(&no_cd.stderr).contains("Claimed worktree"));
+    let history = run_git(&env.local_dir, &["config", "--get", "cep.history-path"]);
+    assert_eq!(
+        PathBuf::from(history).canonicalize().unwrap(),
+        syrah_path.canonicalize().unwrap()
+    );
+
+    // 4. `cep claim --print-path` writes only the path to stdout and nothing to stderr.
+    env.cmd().args(["release", "merlot"]).assert().success();
+    let print_path = env
+        .cmd()
+        .args(["claim", "merlot", "--print-path"])
+        .output()
+        .unwrap();
+    assert!(print_path.status.success());
+    assert_eq!(
+        PathBuf::from(String::from_utf8_lossy(&print_path.stdout).trim())
+            .canonicalize()
+            .unwrap(),
+        merlot_path.canonicalize().unwrap()
+    );
+    assert!(String::from_utf8_lossy(&print_path.stderr)
+        .trim()
+        .is_empty());
+}

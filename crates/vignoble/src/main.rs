@@ -42,59 +42,77 @@ impl Shell {
     }
 }
 
+fn render_bash_zsh_wrapper(bin_name: &str) -> String {
+    format!(
+        r#"{bin}() {{
+  if [ "$1" = "cd" ]; then
+    eval "$(command {bin} cd --shell-eval "${{@:2}}")"
+  elif [ "$1" = "claim" ] && [ -t 1 ]; then
+    local _cep_arg _cep_eval=1 _cep_out
+    for _cep_arg in "${{@:2}}"; do
+      case "$_cep_arg" in
+        -h|--help|--print-path|--no-cd) _cep_eval=0; break ;;
+      esac
+    done
+    if [ "$_cep_eval" = 1 ]; then
+      _cep_out="$(command {bin} claim --shell-eval "${{@:2}}")" && eval "$_cep_out"
+    else
+      command {bin} "$@"
+    fi
+  else
+    command {bin} "$@"
+  fi
+}}"#,
+        bin = bin_name
+    )
+}
+
+fn render_fish_wrapper(bin_name: &str) -> String {
+    format!(
+        r#"function {bin}
+    if test "$argv[1]" = "cd"
+        eval (command {bin} cd --shell-eval $argv[2..-1])
+    else if test "$argv[1]" = "claim"; and isatty stdout
+        set -l _cep_eval 1
+        for _cep_arg in $argv[2..-1]
+            switch $_cep_arg
+                case -h --help --print-path --no-cd
+                    set _cep_eval 0
+                    break
+            end
+        end
+        if test $_cep_eval -eq 1
+            set -l _cep_out (command {bin} claim --shell-eval $argv[2..-1])
+            and eval $_cep_out
+        else
+            command {bin} $argv
+        end
+    else
+        command {bin} $argv
+    end
+end"#,
+        bin = bin_name
+    )
+}
+
 /// Render the shell wrapper functions for `cep` (`cep`, `cep-dev`, `cep-debug`) in the target shell.
 pub fn render_shell_init(shell: Shell, with_completion: bool) -> String {
+    let bins = ["cep", "cep-dev", "cep-debug"];
     let wrapper = match shell {
-        Shell::Bash | Shell::Zsh => {
-            r#"cep() {
-  if [ "$1" = "cd" ]; then
-    eval "$(command cep cd --shell-eval "${@:2}")"
-  else
-    command cep "$@"
-  fi
-}
-cep-dev() {
-  if [ "$1" = "cd" ]; then
-    eval "$(command cep-dev cd --shell-eval "${@:2}")"
-  else
-    command cep-dev "$@"
-  fi
-}
-cep-debug() {
-  if [ "$1" = "cd" ]; then
-    eval "$(command cep-debug cd --shell-eval "${@:2}")"
-  else
-    command cep-debug "$@"
-  fi
-}"#
-        }
-        Shell::Fish => {
-            r#"function cep
-    if test "$argv[1]" = "cd"
-        eval (command cep cd --shell-eval $argv[2..-1])
-    else
-        command cep $argv
-    end
-end
-function cep-dev
-    if test "$argv[1]" = "cd"
-        eval (command cep-dev cd --shell-eval $argv[2..-1])
-    else
-        command cep-dev $argv
-    end
-end
-function cep-debug
-    if test "$argv[1]" = "cd"
-        eval (command cep-debug cd --shell-eval $argv[2..-1])
-    else
-        command cep-debug $argv
-    end
-end"#
-        }
+        Shell::Bash | Shell::Zsh => bins
+            .iter()
+            .map(|b| render_bash_zsh_wrapper(b))
+            .collect::<Vec<_>>()
+            .join("\n"),
+        Shell::Fish => bins
+            .iter()
+            .map(|b| render_fish_wrapper(b))
+            .collect::<Vec<_>>()
+            .join("\n"),
     };
 
     if !with_completion {
-        return wrapper.to_string();
+        return wrapper;
     }
 
     let mut buf = Vec::new();
@@ -262,6 +280,11 @@ mod tests {
         let out = render_shell_init(Shell::Bash, false);
         assert!(out.contains("cep() {"));
         assert!(out.contains(r#"eval "$(command cep cd --shell-eval "${@:2}")""#));
+        assert!(out.contains(r#"elif [ "$1" = "claim" ] && [ -t 1 ]; then"#));
+        assert!(out.contains(r#"-h|--help|--print-path|--no-cd"#));
+        assert!(out.contains(
+            r#"_cep_out="$(command cep claim --shell-eval "${@:2}")" && eval "$_cep_out""#
+        ));
         assert!(out.contains(r#"command cep "$@""#));
     }
 
@@ -270,6 +293,7 @@ mod tests {
         let out = render_shell_init(Shell::Zsh, false);
         assert!(out.contains("cep() {"));
         assert!(out.contains(r#"eval "$(command cep cd --shell-eval "${@:2}")""#));
+        assert!(out.contains(r#"elif [ "$1" = "claim" ] && [ -t 1 ]; then"#));
         assert!(out.contains(r#"command cep "$@""#));
     }
 
@@ -278,6 +302,10 @@ mod tests {
         let out = render_shell_init(Shell::Fish, false);
         assert!(out.contains("function cep"));
         assert!(out.contains("eval (command cep cd --shell-eval $argv[2..-1])"));
+        assert!(out.contains(r#"else if test "$argv[1]" = "claim"; and isatty stdout"#));
+        assert!(out.contains("case -h --help --print-path --no-cd"));
+        assert!(out.contains("set -l _cep_out (command cep claim --shell-eval $argv[2..-1])"));
+        assert!(out.contains("and eval $_cep_out"));
         assert!(out.contains("command cep $argv"));
     }
 
